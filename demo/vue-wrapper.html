@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Vue Wrapper - Vanilla Tables</title>
+    <link rel="stylesheet" href="../dist/vanilla-tables.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="../dist/vanilla-tables.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        button {
+            margin-bottom: 10px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <h1>Vue Wrapper Demo</h1>
+        <p>This demo uses a minimal Vue 3 component to integrate Vanilla Tables.</p>
+        <button @click="addRow">Add Random Row</button>
+        <hr />
+        <vanilla-table :data="data" :options="options"></vanilla-table>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, onUnmounted, watch } = Vue;
+
+        const VanillaTable = {
+            props: ['data', 'options'],
+            setup(props) {
+                const tableRoot = ref(null);
+                let tableInstance = null;
+
+                onMounted(() => {
+                    tableInstance = new VanillaTables.VanillaTable(tableRoot.value, props.data, props.options).init();
+                });
+
+                onUnmounted(() => {
+                    if (tableInstance) tableInstance.destroy();
+                });
+
+                watch(() => props.data, (newData) => {
+                    if (tableInstance) tableInstance.setData(newData);
+                }, { deep: true });
+
+                return () => Vue.h('div', { ref: tableRoot });
+            }
+        };
+
+        const app = createApp({
+            components: { 'vanilla-table': VanillaTable },
+            setup() {
+                const data = ref([
+                    { id: 1, name: 'Alice', score: 90 },
+                    { id: 2, name: 'Bob', score: 85 },
+                    { id: 3, name: 'Charlie', score: 95 }
+                ]);
+                const options = { pageSize: 5, searchable: true };
+
+                const addRow = () => {
+                    const nextId = data.value.length + 1;
+                    data.value.push({ id: nextId, name: `User ${nextId}`, score: Math.floor(Math.random() * 100) });
+                };
+
+                return { data, options, addRow };
+            }
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+
+</html>

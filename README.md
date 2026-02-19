@@ -63,6 +63,134 @@ table.use(bootstrapThemePlugin());
 </script>
 ```
 
+## Framework Wrappers
+
+Vanilla Tables is framework-agnostic. Use these minimal wrappers to integrate with your preferred stack.
+
+### React
+
+```jsx
+import React, { useEffect, useRef } from 'react';
+import { createVanillaTable } from 'vanilla-tables';
+import 'vanilla-tables/styles';
+
+const VanillaTableWrapper = ({ data, options }) => {
+  const tableRef = useRef(null);
+  const instanceRef = useRef(null);
+
+  useEffect(() => {
+    // Mount
+    if (tableRef.current && !instanceRef.current) {
+      instanceRef.current = createVanillaTable(tableRef.current, data, options);
+    }
+    // Destroy
+    return () => {
+      if (instanceRef.current) {
+        instanceRef.current.destroy();
+        instanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update
+  useEffect(() => {
+    if (instanceRef.current) {
+      instanceRef.current.setData(data);
+    }
+  }, [data]);
+
+  return <div ref={tableRef} />;
+};
+
+export default VanillaTableWrapper;
+```
+
+### Vue 3 (Composition API)
+
+```vue
+<template>
+  <div ref="tableRoot"></div>
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { createVanillaTable } from 'vanilla-tables';
+import 'vanilla-tables/styles';
+
+const props = defineProps({
+  data: { type: Array, required: true },
+  options: { type: Object, default: () => ({}) }
+});
+
+const tableRoot = ref(null);
+let tableInstance = null;
+
+onMounted(() => {
+  // Mount
+  tableInstance = createVanillaTable(tableRoot.value, props.data, props.options);
+});
+
+onUnmounted(() => {
+  // Destroy
+  if (tableInstance) {
+    tableInstance.destroy();
+  }
+});
+
+// Update
+watch(() => props.data, (newData) => {
+  if (tableInstance) {
+    tableInstance.setData(newData);
+  }
+}, { deep: true });
+</script>
+```
+
+### Angular
+
+```typescript
+import { Component, ElementRef, Input, OnChanges, OnDestroy, AfterViewInit, ViewChild, SimpleChanges } from '@angular/core';
+import { createVanillaTable } from 'vanilla-tables';
+
+@Component({
+  selector: 'app-vanilla-table',
+  template: '<div #tableRoot></div>',
+  standalone: true
+})
+export class VanillaTableComponent implements AfterViewInit, OnChanges, OnDestroy {
+  @ViewChild('tableRoot') tableRoot!: ElementRef;
+  @Input() data: any[] = [];
+  @Input() options: any = {};
+  
+  private tableInstance?: any;
+
+  ngAfterViewInit() {
+    // Mount
+    this.tableInstance = createVanillaTable(this.tableRoot.nativeElement, this.data, this.options);
+  }
+
+  ngOnChanges(changes: SimpleChanges) {
+    // Update
+    if (this.tableInstance && changes['data']) {
+      this.tableInstance.setData(this.data);
+    }
+  }
+
+  ngOnDestroy() {
+    // Destroy
+    if (this.tableInstance) {
+      this.tableInstance.destroy();
+    }
+  }
+}
+```
+
+### Troubleshooting Notes
+
+- **React Strict Mode**: In development, React 18+ may mount components twice. The `instanceRef` check in `useEffect` prevents double initialization.
+- **Style Imports**: Ensure you import `vanilla-tables/styles` globally or within the component to apply base table styling.
+- **SSR**: Vanilla Tables requires a DOM environment. If using Next.js or Nuxt, wrap the component in a client-only check or use dynamic imports.
+
 ## Core Features
 
 - Global search
