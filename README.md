@@ -67,6 +67,10 @@ table.use(bootstrapThemePlugin());
 
 Vanilla Tables is framework-agnostic. Use these minimal wrappers to integrate with your preferred stack.
 
+Wrapper behavior note:
+These minimal wrappers treat `options` as initialization-time configuration.
+If `options` can change at runtime in your app, re-create the table instance when `options` change.
+
 ### React
 
 ```jsx
@@ -187,7 +191,7 @@ export class VanillaTableComponent implements AfterViewInit, OnChanges, OnDestro
 
 ### Troubleshooting Notes
 
-- **React Strict Mode**: In development, React 18+ may mount components twice. The `instanceRef` check in `useEffect` prevents double initialization.
+- **React Strict Mode**: In development, React 18+ intentionally mounts, unmounts, and remounts components once to detect side effects. The cleanup in each wrapper keeps this behavior safe.
 - **Style Imports**: Ensure you import `vanilla-tables/styles` globally or within the component to apply base table styling.
 - **SSR**: Vanilla Tables requires a DOM environment. If using Next.js or Nuxt, wrap the component in a client-only check or use dynamic imports.
 
