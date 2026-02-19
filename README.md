@@ -218,6 +218,13 @@ PRs are welcome. Keep changes test-backed and consistent with project principles
 - graceful degradation behavior
 - documented internals and public usage
 
+## Project Health
+
+- Changelog: `CHANGELOG.md`
+- Code of Conduct: `.github/CODE_OF_CONDUCT.md`
+- Security policy: `.github/SECURITY.md`
+- Support guide: `.github/SUPPORT.md`
+
 ## License
 
 MIT
