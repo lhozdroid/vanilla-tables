@@ -8,13 +8,13 @@ import { ServerDataSource } from './server-data-source.js';
  * @returns {ClientDataSource | ServerDataSource}
  */
 export function createDataSource({ options, store, onLoadingChange }) {
-  if (options.serverSide) {
-    return new ServerDataSource({
-      store,
-      fetchData: options.fetchData,
-      onLoadingChange
-    });
-  }
+    if (options.serverSide) {
+        return new ServerDataSource({
+            store,
+            fetchData: options.fetchData,
+            onLoadingChange
+        });
+    }
 
-  return new ClientDataSource({ store });
+    return new ClientDataSource({ store });
 }

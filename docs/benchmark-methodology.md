@@ -28,8 +28,7 @@ npm run bench:memory
 - Run on an idle machine when possible.
 - Close other heavy browser tabs/processes.
 - Capture environment metadata when posting results:
-  - OS and version
-  - CPU model
-  - Node version
-  - Browser (for e2e perf scenarios)
-
+    - OS and version
+    - CPU model
+    - Node version
+    - Browser (for e2e perf scenarios)

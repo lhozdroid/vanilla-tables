@@ -6,20 +6,20 @@
  * @returns {Record<string, any>}
  */
 export function deepMerge(base, extra) {
-  const output = { ...base };
+    const output = { ...base };
 
-  for (const key of Object.keys(extra || {})) {
-    const baseValue = output[key];
-    const extraValue = extra[key];
+    for (const key of Object.keys(extra || {})) {
+        const baseValue = output[key];
+        const extraValue = extra[key];
 
-    if (isObject(baseValue) && isObject(extraValue)) {
-      output[key] = deepMerge(baseValue, extraValue);
-    } else {
-      output[key] = extraValue;
+        if (isObject(baseValue) && isObject(extraValue)) {
+            output[key] = deepMerge(baseValue, extraValue);
+        } else {
+            output[key] = extraValue;
+        }
     }
-  }
 
-  return output;
+    return output;
 }
 
 /**
@@ -29,5 +29,5 @@ export function deepMerge(base, extra) {
  * @returns {boolean}
  */
 function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

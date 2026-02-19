@@ -1,150 +1,150 @@
 .vt-controls,
 .vt-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
 .vt-size-wrap,
 .vt-search-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .vt-search-wrap {
-  margin-left: auto;
+    margin-left: auto;
 }
 
 .vt-pagination-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
 }
 
 .vt-page-btn {
-  min-width: 88px;
+    min-width: 88px;
 }
 
 .vt-table-wrap {
-  width: 100%;
-  overflow: auto;
+    width: 100%;
+    overflow: auto;
 }
 
 .vt-table {
-  width: 100%;
+    width: 100%;
 }
 
 .vt-table th,
 .vt-table td {
-  vertical-align: middle;
+    vertical-align: middle;
 }
 
 .vt-actions-cell {
-  text-align: center;
-  white-space: nowrap;
+    text-align: center;
+    white-space: nowrap;
 }
 
 .vt-actions-cell .vt-action-select {
-  display: inline-block;
+    display: inline-block;
 }
 
 .vt-expand-trigger {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  font-size: 16px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-size: 16px;
 }
 
 @media (max-width: 768px) {
-  .vt-controls,
-  .vt-footer {
-    flex-direction: column;
-    align-items: stretch;
-  }
+    .vt-controls,
+    .vt-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
 
-  .vt-search-wrap {
-    margin-left: 0;
-  }
+    .vt-search-wrap {
+        margin-left: 0;
+    }
 
-  .vt-pagination-group {
-    margin-left: 0;
-    width: 100%;
-    flex-wrap: wrap;
-  }
+    .vt-pagination-group {
+        margin-left: 0;
+        width: 100%;
+        flex-wrap: wrap;
+    }
 
-  .vt-page-btn {
-    flex: 1 1 calc(50% - 0.5rem);
-    min-width: 0;
-  }
+    .vt-page-btn {
+        flex: 1 1 calc(50% - 0.5rem);
+        min-width: 0;
+    }
 }
 
 .tw-safelist {
-  display: none;
+    display: none;
 }
 
 /* MUI-like visual shim for class-based theme plugin demo */
 .MuiPaper-root {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
 }
 
 .MuiToolbar-root {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px;
-  border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid #e5e7eb;
 }
 
 .MuiTableContainer-root {
-  overflow-x: auto;
+    overflow-x: auto;
 }
 
 .MuiTable-root {
-  width: 100%;
-  border-collapse: collapse;
+    width: 100%;
+    border-collapse: collapse;
 }
 
 .MuiTableCell-root {
-  border-bottom: 1px solid #e5e7eb;
-  padding: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 8px;
 }
 
 .MuiTableCell-head {
-  background: #f9fafb;
-  font-weight: 600;
+    background: #f9fafb;
+    font-weight: 600;
 }
 
 .mui-sort-trigger {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .MuiButton-root,
 .MuiInputBase-input,
 .MuiNativeSelect-select {
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  padding: 4px 8px;
-  font-size: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    padding: 4px 8px;
+    font-size: 12px;
 }
 
 .MuiTableFooter-root {
-  border-top: 1px solid #e5e7eb;
+    border-top: 1px solid #e5e7eb;
 }

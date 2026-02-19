@@ -19,14 +19,14 @@ const REPEAT_RUNS = Math.max(1, Number(process.env.STRESS_REPEAT_RUNS || 1));
  * @returns {number[] | null}
  */
 function parseSizes(raw) {
-  if (!raw) return null;
+    if (!raw) return null;
 
-  const values = raw
-    .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((value) => Number.isFinite(value) && value > 0);
+    const values = raw
+        .split(',')
+        .map((item) => Number(item.trim()))
+        .filter((value) => Number.isFinite(value) && value > 0);
 
-  return values.length ? values : null;
+    return values.length ? values : null;
 }
 
 /**
@@ -36,41 +36,41 @@ function parseSizes(raw) {
  * @returns {Promise<void>}
  */
 function waitForServer(timeoutMs) {
-  const startedAt = Date.now();
+    const startedAt = Date.now();
 
-  return new Promise((resolve, reject) => {
-    const tryConnect = () => {
-      const req = request(
-        {
-          host: HOST,
-          port: PORT,
-          path: '/demo/index.html',
-          method: 'GET'
-        },
-        (res) => {
-          res.resume();
-          if (res.statusCode >= 200 && res.statusCode < 500) {
-            resolve();
-            return;
-          }
-          retry();
-        }
-      );
+    return new Promise((resolve, reject) => {
+        const tryConnect = () => {
+            const req = request(
+                {
+                    host: HOST,
+                    port: PORT,
+                    path: '/demo/index.html',
+                    method: 'GET'
+                },
+                (res) => {
+                    res.resume();
+                    if (res.statusCode >= 200 && res.statusCode < 500) {
+                        resolve();
+                        return;
+                    }
+                    retry();
+                }
+            );
 
-      req.on('error', retry);
-      req.end();
-    };
+            req.on('error', retry);
+            req.end();
+        };
 
-    const retry = () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error(`Timeout waiting for fixture server on http://${HOST}:${PORT}`));
-        return;
-      }
-      setTimeout(tryConnect, 150);
-    };
+        const retry = () => {
+            if (Date.now() - startedAt > timeoutMs) {
+                reject(new Error(`Timeout waiting for fixture server on http://${HOST}:${PORT}`));
+                return;
+            }
+            setTimeout(tryConnect, 150);
+        };
 
-    tryConnect();
-  });
+        tryConnect();
+    });
 }
 
 /**
@@ -79,30 +79,30 @@ function waitForServer(timeoutMs) {
  * @returns {{ server: import('node:child_process').ChildProcess, stop: () => void }}
  */
 function startServer() {
-  const server = spawn('node', ['tests/e2e/server.mjs'], {
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
+    const server = spawn('node', ['tests/e2e/server.mjs'], {
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
 
-  server.stdout?.on('data', (chunk) => {
-    process.stdout.write(`[stress-server] ${chunk}`);
-  });
-  server.stderr?.on('data', (chunk) => {
-    process.stderr.write(`[stress-server] ${chunk}`);
-  });
+    server.stdout?.on('data', (chunk) => {
+        process.stdout.write(`[stress-server] ${chunk}`);
+    });
+    server.stderr?.on('data', (chunk) => {
+        process.stderr.write(`[stress-server] ${chunk}`);
+    });
 
-  const stop = () => {
-    if (!server.killed) {
-      server.kill('SIGTERM');
-    }
-  };
+    const stop = () => {
+        if (!server.killed) {
+            server.kill('SIGTERM');
+        }
+    };
 
-  process.on('exit', stop);
-  process.on('SIGINT', () => {
-    stop();
-    process.exit(130);
-  });
+    process.on('exit', stop);
+    process.on('SIGINT', () => {
+        stop();
+        process.exit(130);
+    });
 
-  return { server, stop };
+    return { server, stop };
 }
 
 /**
@@ -110,84 +110,84 @@ function startServer() {
  *
  * @param {import('@playwright/test').Page} page
  * @param {number} size
- * @returns {Promise<{ size: number, renderMs: number, refreshHitMs: number, searchMs: number, sortMs: number, totalRows: number, ok: boolean, reason: string }>} 
+ * @returns {Promise<{ size: number, renderMs: number, refreshHitMs: number, searchMs: number, sortMs: number, totalRows: number, ok: boolean, reason: string }>}
  */
 function runIteration(page, size) {
-  return page.evaluate((rowCount) => {
-    const startedAt = performance.now();
+    return page.evaluate((rowCount) => {
+        const startedAt = performance.now();
 
-    const buildRows = (count) => {
-      const cities = ['London', 'Paris', 'Berlin', 'Madrid', 'Rome', 'Lisbon'];
-      return Array.from({ length: count }).map((_, index) => ({
-        id: String(index + 1),
-        name: `User ${index + 1}`,
-        city: cities[index % cities.length],
-        score: index % 1000,
-        active: index % 2 === 0
-      }));
-    };
+        const buildRows = (count) => {
+            const cities = ['London', 'Paris', 'Berlin', 'Madrid', 'Rome', 'Lisbon'];
+            return Array.from({ length: count }).map((_, index) => ({
+                id: String(index + 1),
+                name: `User ${index + 1}`,
+                city: cities[index % cities.length],
+                score: index % 1000,
+                active: index % 2 === 0
+            }));
+        };
 
-    const ensureRoot = () => {
-      const existing = document.getElementById('stress-root');
-      if (existing) {
-        existing.innerHTML = '';
-        return existing;
-      }
-      const root = document.createElement('div');
-      root.id = 'stress-root';
-      document.body.innerHTML = '';
-      document.body.appendChild(root);
-      return root;
-    };
+        const ensureRoot = () => {
+            const existing = document.getElementById('stress-root');
+            if (existing) {
+                existing.innerHTML = '';
+                return existing;
+            }
+            const root = document.createElement('div');
+            root.id = 'stress-root';
+            document.body.innerHTML = '';
+            document.body.appendChild(root);
+            return root;
+        };
 
-    return import('/dist/vanilla-tables.js').then((lib) => {
-      const root = ensureRoot();
-      const rows = buildRows(rowCount);
-      const table = lib.createVanillaTable(root, rows, {
-        pageSize: 50,
-        debounceMs: 0,
-        columns: [
-          { key: 'id', label: 'ID' },
-          { key: 'name', label: 'Name' },
-          { key: 'city', label: 'City' },
-          { key: 'score', label: 'Score' },
-          { key: 'active', label: 'Active' }
-        ]
-      });
+        return import('/dist/vanilla-tables.js').then((lib) => {
+            const root = ensureRoot();
+            const rows = buildRows(rowCount);
+            const table = lib.createVanillaTable(root, rows, {
+                pageSize: 50,
+                debounceMs: 0,
+                columns: [
+                    { key: 'id', label: 'ID' },
+                    { key: 'name', label: 'Name' },
+                    { key: 'city', label: 'City' },
+                    { key: 'score', label: 'Score' },
+                    { key: 'active', label: 'Active' }
+                ]
+            });
 
-      return table.refresh().then(() => {
-        const renderMs = performance.now() - startedAt;
-        const refreshHitAt = performance.now();
-        return table.refresh().then(() => {
-          const refreshHitMs = performance.now() - refreshHitAt;
-        const initialView = table.getView();
-        const searchAt = performance.now();
+            return table.refresh().then(() => {
+                const renderMs = performance.now() - startedAt;
+                const refreshHitAt = performance.now();
+                return table.refresh().then(() => {
+                    const refreshHitMs = performance.now() - refreshHitAt;
+                    const initialView = table.getView();
+                    const searchAt = performance.now();
 
-        return table.search('user 9').then(() => {
-          const searchMs = performance.now() - searchAt;
-          const sortAt = performance.now();
+                    return table.search('user 9').then(() => {
+                        const searchMs = performance.now() - searchAt;
+                        const sortAt = performance.now();
 
-          return table.sortBy('score', 'desc').then(() => {
-            const sortMs = performance.now() - sortAt;
-            const view = table.getView();
-            table.destroy();
+                        return table.sortBy('score', 'desc').then(() => {
+                            const sortMs = performance.now() - sortAt;
+                            const view = table.getView();
+                            table.destroy();
 
-            return {
-              size: rowCount,
-              renderMs,
-              refreshHitMs,
-              searchMs,
-              sortMs,
-              totalRows: initialView.totalRows,
-              ok: true,
-              reason: ''
-            };
-          });
+                            return {
+                                size: rowCount,
+                                renderMs,
+                                refreshHitMs,
+                                searchMs,
+                                sortMs,
+                                totalRows: initialView.totalRows,
+                                ok: true,
+                                reason: ''
+                            };
+                        });
+                    });
+                });
+            });
         });
-        });
-      });
-    });
-  }, size);
+    }, size);
 }
 
 /**
@@ -197,22 +197,22 @@ function runIteration(page, size) {
  * @returns {{ ok: boolean, reason: string }}
  */
 function evaluateThresholds(result) {
-  if (result.renderMs > MAX_RENDER_MS) {
-    return { ok: false, reason: `render ${Math.round(result.renderMs)}ms > ${MAX_RENDER_MS}ms` };
-  }
-  if (result.refreshHitMs > MAX_REFRESH_HIT_MS) {
-    return {
-      ok: false,
-      reason: `refresh-hit ${Math.round(result.refreshHitMs)}ms > ${MAX_REFRESH_HIT_MS}ms`
-    };
-  }
-  if (result.searchMs > MAX_SEARCH_MS) {
-    return { ok: false, reason: `search ${Math.round(result.searchMs)}ms > ${MAX_SEARCH_MS}ms` };
-  }
-  if (result.sortMs > MAX_SORT_MS) {
-    return { ok: false, reason: `sort ${Math.round(result.sortMs)}ms > ${MAX_SORT_MS}ms` };
-  }
-  return { ok: true, reason: '' };
+    if (result.renderMs > MAX_RENDER_MS) {
+        return { ok: false, reason: `render ${Math.round(result.renderMs)}ms > ${MAX_RENDER_MS}ms` };
+    }
+    if (result.refreshHitMs > MAX_REFRESH_HIT_MS) {
+        return {
+            ok: false,
+            reason: `refresh-hit ${Math.round(result.refreshHitMs)}ms > ${MAX_REFRESH_HIT_MS}ms`
+        };
+    }
+    if (result.searchMs > MAX_SEARCH_MS) {
+        return { ok: false, reason: `search ${Math.round(result.searchMs)}ms > ${MAX_SEARCH_MS}ms` };
+    }
+    if (result.sortMs > MAX_SORT_MS) {
+        return { ok: false, reason: `sort ${Math.round(result.sortMs)}ms > ${MAX_SORT_MS}ms` };
+    }
+    return { ok: true, reason: '' };
 }
 
 /**
@@ -222,12 +222,12 @@ function evaluateThresholds(result) {
  * @returns {number}
  */
 function median(values) {
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[middle - 1] + sorted[middle]) / 2;
-  }
-  return sorted[middle];
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+    return sorted[middle];
 }
 
 /**
@@ -238,34 +238,34 @@ function median(values) {
  * @returns {Promise<{ size: number, renderMs: number, refreshHitMs: number, searchMs: number, sortMs: number, totalRows: number, ok: boolean, reason: string }>}
  */
 function runMeasuredIteration(page, size) {
-  const warmup = (remaining) => {
-    if (remaining <= 0) return Promise.resolve();
-    return runIteration(page, size).then(() => warmup(remaining - 1));
-  };
+    const warmup = (remaining) => {
+        if (remaining <= 0) return Promise.resolve();
+        return runIteration(page, size).then(() => warmup(remaining - 1));
+    };
 
-  const measured = [];
-  const runMeasured = (remaining) => {
-    if (remaining <= 0) return Promise.resolve();
-    return runIteration(page, size).then((result) => {
-      measured.push(result);
-      return runMeasured(remaining - 1);
-    });
-  };
+    const measured = [];
+    const runMeasured = (remaining) => {
+        if (remaining <= 0) return Promise.resolve();
+        return runIteration(page, size).then((result) => {
+            measured.push(result);
+            return runMeasured(remaining - 1);
+        });
+    };
 
-  return warmup(WARMUP_RUNS).then(() =>
-    runMeasured(REPEAT_RUNS).then(() => {
-      return {
-        size,
-        renderMs: median(measured.map((item) => item.renderMs)),
-        refreshHitMs: median(measured.map((item) => item.refreshHitMs)),
-        searchMs: median(measured.map((item) => item.searchMs)),
-        sortMs: median(measured.map((item) => item.sortMs)),
-        totalRows: measured[measured.length - 1]?.totalRows || 0,
-        ok: true,
-        reason: ''
-      };
-    })
-  );
+    return warmup(WARMUP_RUNS).then(() =>
+        runMeasured(REPEAT_RUNS).then(() => {
+            return {
+                size,
+                renderMs: median(measured.map((item) => item.renderMs)),
+                refreshHitMs: median(measured.map((item) => item.refreshHitMs)),
+                searchMs: median(measured.map((item) => item.searchMs)),
+                sortMs: median(measured.map((item) => item.sortMs)),
+                totalRows: measured[measured.length - 1]?.totalRows || 0,
+                ok: true,
+                reason: ''
+            };
+        })
+    );
 }
 
 /**
@@ -274,89 +274,87 @@ function runMeasuredIteration(page, size) {
  * @returns {Promise<void>}
  */
 function run() {
-  const serverCtl = startServer();
-  let browser;
-  let page;
+    const serverCtl = startServer();
+    let browser;
+    let page;
 
-  const results = [];
-  let maxStable = 0;
+    const results = [];
+    let maxStable = 0;
 
-  return waitForServer(20_000)
-    .then(() => chromium.launch({ headless: true }))
-    .then((instance) => {
-      browser = instance;
-      return browser.newPage();
-    })
-    .then((createdPage) => {
-      page = createdPage;
-      return page.goto(`http://${HOST}:${PORT}/demo/index.html`);
-    })
-    .then(() => {
-      const iterate = (index) => {
-        if (index >= SIZES.length) return Promise.resolve();
+    return waitForServer(20_000)
+        .then(() => chromium.launch({ headless: true }))
+        .then((instance) => {
+            browser = instance;
+            return browser.newPage();
+        })
+        .then((createdPage) => {
+            page = createdPage;
+            return page.goto(`http://${HOST}:${PORT}/demo/index.html`);
+        })
+        .then(() => {
+            const iterate = (index) => {
+                if (index >= SIZES.length) return Promise.resolve();
 
-        const size = SIZES[index];
-        return runMeasuredIteration(page, size)
-          .then((result) => {
-            const verdict = evaluateThresholds(result);
-            const merged = {
-              ...result,
-              ok: verdict.ok,
-              reason: verdict.reason
+                const size = SIZES[index];
+                return runMeasuredIteration(page, size)
+                    .then((result) => {
+                        const verdict = evaluateThresholds(result);
+                        const merged = {
+                            ...result,
+                            ok: verdict.ok,
+                            reason: verdict.reason
+                        };
+
+                        results.push(merged);
+                        if (merged.ok) {
+                            maxStable = size;
+                            return iterate(index + 1);
+                        }
+                        return Promise.resolve();
+                    })
+                    .catch((error) => {
+                        results.push({
+                            size,
+                            renderMs: Number.NaN,
+                            refreshHitMs: Number.NaN,
+                            searchMs: Number.NaN,
+                            sortMs: Number.NaN,
+                            totalRows: 0,
+                            ok: false,
+                            reason: `error: ${error.message}`
+                        });
+                        return Promise.resolve();
+                    });
             };
 
-            results.push(merged);
-            if (merged.ok) {
-              maxStable = size;
-              return iterate(index + 1);
-            }
-            return Promise.resolve();
-          })
-          .catch((error) => {
-            results.push({
-              size,
-              renderMs: Number.NaN,
-              refreshHitMs: Number.NaN,
-              searchMs: Number.NaN,
-              sortMs: Number.NaN,
-              totalRows: 0,
-              ok: false,
-              reason: `error: ${error.message}`
+            return iterate(0);
+        })
+        .then(() => {
+            const printable = results.map((item) => ({
+                rows: item.size,
+                render_ms: Number.isFinite(item.renderMs) ? Math.round(item.renderMs) : 'ERR',
+                refresh_hit_ms: Number.isFinite(item.refreshHitMs) ? Math.round(item.refreshHitMs) : 'ERR',
+                search_ms: Number.isFinite(item.searchMs) ? Math.round(item.searchMs) : 'ERR',
+                sort_ms: Number.isFinite(item.sortMs) ? Math.round(item.sortMs) : 'ERR',
+                total_rows: item.totalRows,
+                status: item.ok ? 'OK' : `STOP (${item.reason})`
+            }));
+
+            console.log('\nStress benchmark results\n');
+            console.table(printable);
+            console.log(`Largest stable dataset: ${maxStable} rows`);
+            console.log(`Thresholds: render<=${MAX_RENDER_MS}ms, refresh-hit<=${MAX_REFRESH_HIT_MS}ms, search<=${MAX_SEARCH_MS}ms, sort<=${MAX_SORT_MS}ms`);
+            console.log(`Sampling: warmup-runs=${WARMUP_RUNS}, repeat-runs=${REPEAT_RUNS} (median)`);
+        })
+        .finally(() => {
+            const closeBrowser = browser ? browser.close().catch(() => {}) : Promise.resolve();
+            return closeBrowser.finally(() => {
+                serverCtl.stop();
             });
-            return Promise.resolve();
-          });
-      };
-
-      return iterate(0);
-    })
-    .then(() => {
-      const printable = results.map((item) => ({
-        rows: item.size,
-        render_ms: Number.isFinite(item.renderMs) ? Math.round(item.renderMs) : 'ERR',
-        refresh_hit_ms: Number.isFinite(item.refreshHitMs) ? Math.round(item.refreshHitMs) : 'ERR',
-        search_ms: Number.isFinite(item.searchMs) ? Math.round(item.searchMs) : 'ERR',
-        sort_ms: Number.isFinite(item.sortMs) ? Math.round(item.sortMs) : 'ERR',
-        total_rows: item.totalRows,
-        status: item.ok ? 'OK' : `STOP (${item.reason})`
-      }));
-
-      console.log('\nStress benchmark results\n');
-      console.table(printable);
-      console.log(`Largest stable dataset: ${maxStable} rows`);
-      console.log(
-        `Thresholds: render<=${MAX_RENDER_MS}ms, refresh-hit<=${MAX_REFRESH_HIT_MS}ms, search<=${MAX_SEARCH_MS}ms, sort<=${MAX_SORT_MS}ms`
-      );
-      console.log(`Sampling: warmup-runs=${WARMUP_RUNS}, repeat-runs=${REPEAT_RUNS} (median)`);
-    })
-    .finally(() => {
-      const closeBrowser = browser ? browser.close().catch(() => {}) : Promise.resolve();
-      return closeBrowser.finally(() => {
-        serverCtl.stop();
-      });
-    });
+        });
 }
 
 run().catch((error) => {
-  console.error('\nStress benchmark failed:\n', error);
-  process.exit(1);
+    console.error('\nStress benchmark failed:\n', error);
+    process.exit(1);
 });
