@@ -5,6 +5,7 @@ Fast, framework-agnostic data tables in pure JavaScript.
 [![CI](https://github.com/lhozdroid/vanilla-tables/actions/workflows/ci.yml/badge.svg)](https://github.com/lhozdroid/vanilla-tables/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/vanilla-tables.svg)](https://www.npmjs.com/package/vanilla-tables)
 [![npm downloads](https://img.shields.io/npm/dm/vanilla-tables.svg)](https://www.npmjs.com/package/vanilla-tables)
+[![GitHub Discussions](https://img.shields.io/github/discussions/lhozdroid/vanilla-tables)](https://github.com/lhozdroid/vanilla-tables/discussions)
 
 Vanilla Tables is an object-oriented table engine designed for real apps: rich features, extensible API, production-safe behavior, and strong test coverage.
 
@@ -220,6 +221,19 @@ export class VanillaTableComponent implements AfterViewInit, OnChanges, OnDestro
 - Stress + e2e + unit coverage pipeline.
 - Release verification script for dist artifacts, exports, size budgets, and tarball contents.
 
+### Baseline Snapshot (2026-02-19)
+
+Measured via `npm run bench` on local maintainer hardware using current defaults.
+
+| rows | render (ms) | refresh-hit (ms) | search (ms) | sort (ms) | status |
+| --- | --- | --- | --- | --- | --- |
+| 10000 | 14 | 3 | 16 | 6 | OK |
+| 25000 | 47 | 3 | 40 | 7 | OK |
+| 50000 | 59 | 2 | 47 | 12 | OK |
+| 100000 | 104 | 2 | 77 | 15 | STOP (render > 100ms target) |
+
+Methodology and reproduction commands: `docs/benchmark-methodology.md`
+
 ## Theming
 
 Default output is semantic and framework-neutral (`vt-*`).
@@ -277,7 +291,7 @@ Examples:
 ## Demos
 
 - Index: `demo/index.html`
-- Individual pages: vanilla, bootstrap, bulma, mui-like, tailwind
+- Individual pages: vanilla, bootstrap, bulma, mui-like, tailwind, react-wrapper, vue-wrapper
 
 Run locally:
 
@@ -349,6 +363,22 @@ PRs are welcome. Keep changes test-backed and consistent with project principles
 - performance-focused data paths
 - graceful degradation behavior
 - documented internals and public usage
+
+Start here:
+
+- Pick a task from pinned issue `#14`: https://github.com/lhozdroid/vanilla-tables/issues/14
+- Join roadmap discussion `#15`: https://github.com/lhozdroid/vanilla-tables/discussions/15
+- For questions: https://github.com/lhozdroid/vanilla-tables/discussions
+
+## Hall Of Contributors
+
+- [@Chidwan3578](https://github.com/Chidwan3578) - framework wrapper recipes and demos
+
+## Docs
+
+- Architecture: `docs/architecture.md`
+- Development workflow: `docs/development.md`
+- Benchmark methodology: `docs/benchmark-methodology.md`
 
 ## Project Health
 

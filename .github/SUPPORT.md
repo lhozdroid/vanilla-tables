@@ -4,7 +4,12 @@
 
 Use GitHub Discussions or open a GitHub issue for usage questions:
 
+- https://github.com/lhozdroid/vanilla-tables/discussions
 - https://github.com/lhozdroid/vanilla-tables/issues
+
+For contribution-ready tasks, start here:
+
+- https://github.com/lhozdroid/vanilla-tables/issues/14
 
 ## Bug Reports
 
