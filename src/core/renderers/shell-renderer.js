@@ -2,27 +2,27 @@
  * Renders static shell markup and resolves DOM references.
  */
 export class ShellRenderer {
-  /**
-   * Creates a shell renderer instance.
-   *
-   * @param {{ root: HTMLElement, options: Record<string, any>, theme: import('../themes/theme-manager.js').ThemeManager }} config
-   */
-  constructor({ root, options, theme }) {
-    /** @type {HTMLElement} */
-    this.root = root;
-    /** @type {Record<string, any>} */
-    this.options = options;
-    /** @type {import('../themes/theme-manager.js').ThemeManager} */
-    this.theme = theme;
-  }
+    /**
+     * Creates a shell renderer instance.
+     *
+     * @param {{ root: HTMLElement, options: Record<string, any>, theme: import('../themes/theme-manager.js').ThemeManager }} config
+     */
+    constructor({ root, options, theme }) {
+        /** @type {HTMLElement} */
+        this.root = root;
+        /** @type {Record<string, any>} */
+        this.options = options;
+        /** @type {import('../themes/theme-manager.js').ThemeManager} */
+        this.theme = theme;
+    }
 
-  /**
-   * Mounts static shell structure.
-   *
-   * @returns {Record<string, HTMLElement>}
-   */
-  mount() {
-    this.root.innerHTML = `
+    /**
+     * Mounts static shell structure.
+     *
+     * @returns {Record<string, HTMLElement>}
+     */
+    mount() {
+        this.root.innerHTML = `
       <div class="${this.theme.classOf('shell', 'vt-shell')}">
         <div class="${this.theme.classOf('controls', 'vt-controls')}">
           <label class="${this.theme.classOf('sizeWrap', 'vt-size-wrap')}">
@@ -52,33 +52,31 @@ export class ShellRenderer {
       </div>
     `;
 
-    const refs = {
-      search: this.root.querySelector('.vt-search'),
-      pageSize: this.root.querySelector('.vt-size'),
-      tableWrap: this.root.querySelector('.vt-table-wrap'),
-      table: this.root.querySelector('.vt-table'),
-      thead: this.root.querySelector('thead'),
-      tbody: this.root.querySelector('tbody'),
-      info: this.root.querySelector('.vt-info'),
-      first: this.root.querySelector('.vt-first'),
-      prev: this.root.querySelector('.vt-prev'),
-      next: this.root.querySelector('.vt-next'),
-      last: this.root.querySelector('.vt-last')
-    };
+        const refs = {
+            search: this.root.querySelector('.vt-search'),
+            pageSize: this.root.querySelector('.vt-size'),
+            tableWrap: this.root.querySelector('.vt-table-wrap'),
+            table: this.root.querySelector('.vt-table'),
+            thead: this.root.querySelector('thead'),
+            tbody: this.root.querySelector('tbody'),
+            info: this.root.querySelector('.vt-info'),
+            first: this.root.querySelector('.vt-first'),
+            prev: this.root.querySelector('.vt-prev'),
+            next: this.root.querySelector('.vt-next'),
+            last: this.root.querySelector('.vt-last')
+        };
 
-    refs.pageSize.innerHTML = this.options.pageSizeOptions
-      .map((size) => `<option value="${size}">${size}</option>`)
-      .join('');
-    refs.pageSize.value = String(this.options.pageSize);
+        refs.pageSize.innerHTML = this.options.pageSizeOptions.map((size) => `<option value="${size}">${size}</option>`).join('');
+        refs.pageSize.value = String(this.options.pageSize);
 
-    if (!this.options.searchable) {
-      refs.search.closest('.vt-search-wrap').style.display = 'none';
+        if (!this.options.searchable) {
+            refs.search.closest('.vt-search-wrap').style.display = 'none';
+        }
+
+        if (!this.options.pagination) {
+            this.root.querySelector('.vt-footer').style.display = 'none';
+        }
+
+        return refs;
     }
-
-    if (!this.options.pagination) {
-      this.root.querySelector('.vt-footer').style.display = 'none';
-    }
-
-    return refs;
-  }
 }

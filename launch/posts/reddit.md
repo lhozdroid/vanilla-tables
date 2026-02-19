@@ -3,6 +3,7 @@
 Built and released **Vanilla Tables**: framework-agnostic data tables in pure JavaScript.
 
 Highlights:
+
 - search + column filters
 - single/multi-sort + paging
 - expandable/editable rows + row actions

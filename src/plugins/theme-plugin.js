@@ -5,7 +5,7 @@
  * @returns {(table: import('../core/vanilla-table.js').VanillaTable) => void}
  */
 export function themePlugin(classes) {
-  return (table) => {
-    table.setThemeClasses(classes || {});
-  };
+    return (table) => {
+        table.setThemeClasses(classes || {});
+    };
 }

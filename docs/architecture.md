@@ -34,4 +34,3 @@
 - Hooks: `table.registerHook(name, callback)`
 - Theme plugins: `src/plugins/*`
 - Server adapters: `src/adapters/server-adapters.js`
-

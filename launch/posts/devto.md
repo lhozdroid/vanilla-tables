@@ -5,6 +5,7 @@ I just released **Vanilla Tables**, a pure JavaScript table library focused on p
 ## Why I built it
 
 I wanted a data-table engine that:
+
 - does not lock teams into one UI framework
 - is object-oriented and plugin-friendly
 - performs well on large datasets

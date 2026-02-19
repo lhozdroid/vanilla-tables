@@ -2,210 +2,212 @@
  * Executes filter/search/sort projections across worker shards.
  */
 export class ProjectionWorkerPool {
-  /**
-   * Creates a worker pool instance.
-   *
-   * @param {{ size: number, timeoutMs?: number, retries?: number }} config
-   */
-  constructor({ size, timeoutMs, retries }) {
-    /** @type {number} */
-    this.size = Math.max(1, Number(size || 1));
-    /** @type {{ worker: Worker }[]} */
-    this.workers = [];
-    /** @type {Map<number, { resolve: (value: any) => void, reject: (reason: any) => void }>} */
-    this.pending = new Map();
-    /** @type {number} */
-    this.nextId = 1;
-    /** @type {number} */
-    this.timeoutMs = Math.max(50, Number(timeoutMs || 4000));
-    /** @type {number} */
-    this.retries = Math.max(0, Math.floor(Number(retries || 1)));
-    /** @type {Record<string, any>[]} */
-    this.rows = [];
+    /**
+     * Creates a worker pool instance.
+     *
+     * @param {{ size: number, timeoutMs?: number, retries?: number }} config
+     */
+    constructor({ size, timeoutMs, retries }) {
+        /** @type {number} */
+        this.size = Math.max(1, Number(size || 1));
+        /** @type {{ worker: Worker }[]} */
+        this.workers = [];
+        /** @type {Map<number, { resolve: (value: any) => void, reject: (reason: any) => void }>} */
+        this.pending = new Map();
+        /** @type {number} */
+        this.nextId = 1;
+        /** @type {number} */
+        this.timeoutMs = Math.max(50, Number(timeoutMs || 4000));
+        /** @type {number} */
+        this.retries = Math.max(0, Math.floor(Number(retries || 1)));
+        /** @type {Record<string, any>[]} */
+        this.rows = [];
 
-    for (let i = 0; i < this.size; i += 1) {
-      this.workers.push({ worker: this.createWorker() });
-    }
-  }
-
-  /**
-   * Terminates all worker instances.
-   *
-   * @returns {void}
-   */
-  destroy() {
-    for (const slot of this.workers) {
-      slot.worker.terminate();
-    }
-    this.workers = [];
-    this.pending.clear();
-  }
-
-  /**
-   * Distributes rows across workers.
-   *
-   * @param {Record<string, any>[]} rows
-   * @returns {Promise<void>}
-   */
-  setRows(rows) {
-    const data = Array.isArray(rows) ? rows : [];
-    this.rows = data;
-    const shardSize = Math.ceil((data.length || 1) / this.workers.length);
-
-    return Promise.all(
-      this.workers.map((slot, index) => {
-        const start = index * shardSize;
-        const end = Math.min(start + shardSize, data.length);
-        return this.runTask(slot.worker, {
-          type: 'setRows',
-          rows: data.slice(start, end),
-          offset: start
-        }).then(() => {});
-      })
-    ).then(() => {});
-  }
-
-  /**
-   * Computes filtered/sorted row indices using worker shards.
-   *
-   * @param {{ keys: string[], searchTerm: string, columnFilters: Record<string, string>, sorts: { key: string, direction: 'asc'|'desc' }[] }} query
-   * @returns {Promise<number[]>}
-   */
-  project(query) {
-    return Promise.all(
-      this.workers.map((slot) =>
-        this.runTask(slot.worker, {
-          type: 'project',
-          keys: query.keys,
-          searchTerm: query.searchTerm,
-          columnFilters: query.columnFilters,
-          sorts: query.sorts
-        })
-      )
-    ).then((chunks) => this.mergeChunks(chunks, query.sorts));
-  }
-
-  /**
-   * Creates one worker with inline projection logic.
-   *
-   * @returns {Worker}
-   */
-  createWorker() {
-    const worker = new Worker(getWorkerUrl());
-    worker.onmessage = (event) => {
-      const payload = event.data || {};
-      const pending = this.pending.get(payload.id);
-      if (!pending) return;
-
-      this.pending.delete(payload.id);
-      if (payload.error) {
-        pending.reject(new Error(payload.error));
-        return;
-      }
-      pending.resolve(payload.result);
-    };
-    worker.onerror = () => {
-      this.pending.forEach(({ reject }) => reject(new Error('projection worker failed')));
-      this.pending.clear();
-    };
-    return worker;
-  }
-
-  /**
-   * Runs one task on a worker and resolves by task id.
-   *
-   * @param {Worker} worker
-   * @param {Record<string, any>} payload
-   * @returns {Promise<any>}
-   */
-  runTask(worker, payload) {
-    return this.runTaskAttempt(worker, payload, this.retries);
-  }
-
-  /**
-   * Runs one task with retry and timeout guards.
-   *
-   * @param {Worker} worker
-   * @param {Record<string, any>} payload
-   * @param {number} retriesLeft
-   * @returns {Promise<any>}
-   */
-  runTaskAttempt(worker, payload, retriesLeft) {
-    const id = this.nextId;
-    this.nextId += 1;
-    let timeoutHandle;
-
-    return new Promise((resolve, reject) => {
-      const onReject = (error) => {
-        clearTimeout(timeoutHandle);
-        if (retriesLeft > 0) {
-          this.runTaskAttempt(worker, payload, retriesLeft - 1).then(resolve).catch(reject);
-          return;
+        for (let i = 0; i < this.size; i += 1) {
+            this.workers.push({ worker: this.createWorker() });
         }
-        reject(error);
-      };
-
-      const onResolve = (result) => {
-        clearTimeout(timeoutHandle);
-        resolve(result);
-      };
-
-      this.pending.set(id, { resolve: onResolve, reject: onReject });
-      timeoutHandle = setTimeout(() => {
-        this.pending.delete(id);
-        onReject(new Error(`projection worker timeout after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
-      worker.postMessage({
-        ...payload,
-        id
-      });
-    });
-  }
-
-  /**
-   * Merges per-shard result chunks into one globally ordered index array.
-   *
-   * @param {number[][]} chunks
-   * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
-   * @returns {number[]}
-   */
-  mergeChunks(chunks, sorts) {
-    if (!Array.isArray(chunks) || !chunks.length) return [];
-    if (!Array.isArray(sorts) || !sorts.length) return chunks.flat();
-
-    const pointers = new Int32Array(chunks.length);
-    const output = [];
-
-    while (true) {
-      let bestChunk = -1;
-      let bestIndex = -1;
-
-      for (let i = 0; i < chunks.length; i += 1) {
-        const pointer = pointers[i];
-        const chunk = chunks[i];
-        if (pointer >= chunk.length) continue;
-
-        const currentIndex = chunk[pointer];
-        if (bestChunk === -1) {
-          bestChunk = i;
-          bestIndex = currentIndex;
-          continue;
-        }
-
-        const comparison = compareRowsBySorts(this.rows[currentIndex], this.rows[bestIndex], sorts);
-        if (comparison < 0 || (comparison === 0 && currentIndex < bestIndex)) {
-          bestChunk = i;
-          bestIndex = currentIndex;
-        }
-      }
-
-      if (bestChunk === -1) break;
-      output.push(bestIndex);
-      pointers[bestChunk] += 1;
     }
 
-    return output;
-  }
+    /**
+     * Terminates all worker instances.
+     *
+     * @returns {void}
+     */
+    destroy() {
+        for (const slot of this.workers) {
+            slot.worker.terminate();
+        }
+        this.workers = [];
+        this.pending.clear();
+    }
+
+    /**
+     * Distributes rows across workers.
+     *
+     * @param {Record<string, any>[]} rows
+     * @returns {Promise<void>}
+     */
+    setRows(rows) {
+        const data = Array.isArray(rows) ? rows : [];
+        this.rows = data;
+        const shardSize = Math.ceil((data.length || 1) / this.workers.length);
+
+        return Promise.all(
+            this.workers.map((slot, index) => {
+                const start = index * shardSize;
+                const end = Math.min(start + shardSize, data.length);
+                return this.runTask(slot.worker, {
+                    type: 'setRows',
+                    rows: data.slice(start, end),
+                    offset: start
+                }).then(() => {});
+            })
+        ).then(() => {});
+    }
+
+    /**
+     * Computes filtered/sorted row indices using worker shards.
+     *
+     * @param {{ keys: string[], searchTerm: string, columnFilters: Record<string, string>, sorts: { key: string, direction: 'asc'|'desc' }[] }} query
+     * @returns {Promise<number[]>}
+     */
+    project(query) {
+        return Promise.all(
+            this.workers.map((slot) =>
+                this.runTask(slot.worker, {
+                    type: 'project',
+                    keys: query.keys,
+                    searchTerm: query.searchTerm,
+                    columnFilters: query.columnFilters,
+                    sorts: query.sorts
+                })
+            )
+        ).then((chunks) => this.mergeChunks(chunks, query.sorts));
+    }
+
+    /**
+     * Creates one worker with inline projection logic.
+     *
+     * @returns {Worker}
+     */
+    createWorker() {
+        const worker = new Worker(getWorkerUrl());
+        worker.onmessage = (event) => {
+            const payload = event.data || {};
+            const pending = this.pending.get(payload.id);
+            if (!pending) return;
+
+            this.pending.delete(payload.id);
+            if (payload.error) {
+                pending.reject(new Error(payload.error));
+                return;
+            }
+            pending.resolve(payload.result);
+        };
+        worker.onerror = () => {
+            this.pending.forEach(({ reject }) => reject(new Error('projection worker failed')));
+            this.pending.clear();
+        };
+        return worker;
+    }
+
+    /**
+     * Runs one task on a worker and resolves by task id.
+     *
+     * @param {Worker} worker
+     * @param {Record<string, any>} payload
+     * @returns {Promise<any>}
+     */
+    runTask(worker, payload) {
+        return this.runTaskAttempt(worker, payload, this.retries);
+    }
+
+    /**
+     * Runs one task with retry and timeout guards.
+     *
+     * @param {Worker} worker
+     * @param {Record<string, any>} payload
+     * @param {number} retriesLeft
+     * @returns {Promise<any>}
+     */
+    runTaskAttempt(worker, payload, retriesLeft) {
+        const id = this.nextId;
+        this.nextId += 1;
+        let timeoutHandle;
+
+        return new Promise((resolve, reject) => {
+            const onReject = (error) => {
+                clearTimeout(timeoutHandle);
+                if (retriesLeft > 0) {
+                    this.runTaskAttempt(worker, payload, retriesLeft - 1)
+                        .then(resolve)
+                        .catch(reject);
+                    return;
+                }
+                reject(error);
+            };
+
+            const onResolve = (result) => {
+                clearTimeout(timeoutHandle);
+                resolve(result);
+            };
+
+            this.pending.set(id, { resolve: onResolve, reject: onReject });
+            timeoutHandle = setTimeout(() => {
+                this.pending.delete(id);
+                onReject(new Error(`projection worker timeout after ${this.timeoutMs}ms`));
+            }, this.timeoutMs);
+            worker.postMessage({
+                ...payload,
+                id
+            });
+        });
+    }
+
+    /**
+     * Merges per-shard result chunks into one globally ordered index array.
+     *
+     * @param {number[][]} chunks
+     * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+     * @returns {number[]}
+     */
+    mergeChunks(chunks, sorts) {
+        if (!Array.isArray(chunks) || !chunks.length) return [];
+        if (!Array.isArray(sorts) || !sorts.length) return chunks.flat();
+
+        const pointers = new Int32Array(chunks.length);
+        const output = [];
+
+        while (true) {
+            let bestChunk = -1;
+            let bestIndex = -1;
+
+            for (let i = 0; i < chunks.length; i += 1) {
+                const pointer = pointers[i];
+                const chunk = chunks[i];
+                if (pointer >= chunk.length) continue;
+
+                const currentIndex = chunk[pointer];
+                if (bestChunk === -1) {
+                    bestChunk = i;
+                    bestIndex = currentIndex;
+                    continue;
+                }
+
+                const comparison = compareRowsBySorts(this.rows[currentIndex], this.rows[bestIndex], sorts);
+                if (comparison < 0 || (comparison === 0 && currentIndex < bestIndex)) {
+                    bestChunk = i;
+                    bestIndex = currentIndex;
+                }
+            }
+
+            if (bestChunk === -1) break;
+            output.push(bestIndex);
+            pointers[bestChunk] += 1;
+        }
+
+        return output;
+    }
 }
 
 /** @type {string | null} */
@@ -217,9 +219,9 @@ let cachedWorkerUrl = null;
  * @returns {string}
  */
 function getWorkerUrl() {
-  if (cachedWorkerUrl) return cachedWorkerUrl;
+    if (cachedWorkerUrl) return cachedWorkerUrl;
 
-  const source = `
+    const source = `
     const toText = (value) => String(value ?? '').toLowerCase();
 
     let rows = [];
@@ -312,8 +314,8 @@ function getWorkerUrl() {
     };
   `;
 
-  cachedWorkerUrl = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
-  return cachedWorkerUrl;
+    cachedWorkerUrl = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }));
+    return cachedWorkerUrl;
 }
 
 /**
@@ -325,28 +327,28 @@ function getWorkerUrl() {
  * @returns {number}
  */
 function compareRowsBySorts(leftRow, rightRow, sorts) {
-  for (const sort of sorts) {
-    const leftRaw = leftRow?.[sort.key];
-    const rightRaw = rightRow?.[sort.key];
-    const leftNum = Number(leftRaw);
-    const rightNum = Number(rightRaw);
-    const leftFinite = Number.isFinite(leftNum);
-    const rightFinite = Number.isFinite(rightNum);
+    for (const sort of sorts) {
+        const leftRaw = leftRow?.[sort.key];
+        const rightRaw = rightRow?.[sort.key];
+        const leftNum = Number(leftRaw);
+        const rightNum = Number(rightRaw);
+        const leftFinite = Number.isFinite(leftNum);
+        const rightFinite = Number.isFinite(rightNum);
 
-    let comparison = 0;
-    if (leftFinite && rightFinite) {
-      comparison = leftNum - rightNum;
-    } else {
-      const leftText = String(leftRaw ?? '').toLowerCase();
-      const rightText = String(rightRaw ?? '').toLowerCase();
-      if (leftText < rightText) comparison = -1;
-      else if (leftText > rightText) comparison = 1;
+        let comparison = 0;
+        if (leftFinite && rightFinite) {
+            comparison = leftNum - rightNum;
+        } else {
+            const leftText = String(leftRaw ?? '').toLowerCase();
+            const rightText = String(rightRaw ?? '').toLowerCase();
+            if (leftText < rightText) comparison = -1;
+            else if (leftText > rightText) comparison = 1;
+        }
+
+        if (comparison !== 0) {
+            return sort.direction === 'desc' ? -comparison : comparison;
+        }
     }
 
-    if (comparison !== 0) {
-      return sort.direction === 'desc' ? -comparison : comparison;
-    }
-  }
-
-  return 0;
+    return 0;
 }

@@ -46,4 +46,3 @@ npm run release:verify
 - Keep core framework-independent and dependency-light.
 - Add behavior through options, hooks, or plugins.
 - Preserve public API compatibility unless planning a major version change.
-

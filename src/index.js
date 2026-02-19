@@ -8,19 +8,7 @@ import { tailwindThemePlugin } from './plugins/tailwind-theme.js';
 import { actionsDropdownPlugin } from './plugins/actions-dropdown.js';
 import { createRestAdapter, createGraphQLAdapter, createCursorAdapter } from './adapters/server-adapters.js';
 
-export {
-  VanillaTable,
-  stripedRowsPlugin,
-  themePlugin,
-  bootstrapThemePlugin,
-  bulmaThemePlugin,
-  muiThemePlugin,
-  tailwindThemePlugin,
-  actionsDropdownPlugin,
-  createRestAdapter,
-  createGraphQLAdapter,
-  createCursorAdapter
-};
+export { VanillaTable, stripedRowsPlugin, themePlugin, bootstrapThemePlugin, bulmaThemePlugin, muiThemePlugin, tailwindThemePlugin, actionsDropdownPlugin, createRestAdapter, createGraphQLAdapter, createCursorAdapter };
 
 /**
  * Creates and initializes a table instance.
@@ -31,5 +19,5 @@ export {
  * @returns {VanillaTable}
  */
 export function createVanillaTable(element, rows, options) {
-  return new VanillaTable(element, rows, options).init();
+    return new VanillaTable(element, rows, options).init();
 }

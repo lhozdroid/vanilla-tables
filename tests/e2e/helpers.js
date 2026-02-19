@@ -8,10 +8,10 @@ import { expect } from '@playwright/test';
  * @returns {Promise<void>}
  */
 export function openScenario(page, scenario) {
-  return page
-    .goto(`/?scenario=${scenario}`)
-    .then(() => page.waitForFunction(() => document.body.dataset.ready === 'true'))
-    .then(() => expect(page.locator('#scenario-label')).toContainText(`scenario: ${scenario}`));
+    return page
+        .goto(`/?scenario=${scenario}`)
+        .then(() => page.waitForFunction(() => document.body.dataset.ready === 'true'))
+        .then(() => expect(page.locator('#scenario-label')).toContainText(`scenario: ${scenario}`));
 }
 
 /**
@@ -21,7 +21,7 @@ export function openScenario(page, scenario) {
  * @returns {Promise<Record<string, any>>}
  */
 export function readState(page) {
-  return page.evaluate(() => window.__e2e.getState());
+    return page.evaluate(() => window.__e2e.getState());
 }
 
 /**
@@ -31,5 +31,5 @@ export function readState(page) {
  * @returns {Promise<Array<{ name: string, payload: any }>>}
  */
 export function readEvents(page) {
-  return page.evaluate(() => window.__e2e.getEvents());
+    return page.evaluate(() => window.__e2e.getEvents());
 }

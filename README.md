@@ -29,22 +29,22 @@ import { createVanillaTable, bootstrapThemePlugin } from 'vanilla-tables';
 import 'vanilla-tables/styles';
 
 const rows = [
-  { id: 1, name: 'Alice', city: 'NYC', score: 45 },
-  { id: 2, name: 'Bob', city: 'Paris', score: 20 }
+    { id: 1, name: 'Alice', city: 'NYC', score: 45 },
+    { id: 2, name: 'Bob', city: 'Paris', score: 20 }
 ];
 
 const table = createVanillaTable(document.querySelector('#table-root'), rows, {
-  pageSize: 10,
-  searchable: true,
-  columnFilters: true,
-  multiSort: true,
-  rowActions: [
-    {
-      id: 'approve',
-      label: 'Approve',
-      onClick: ({ row }) => console.log('approve', row)
-    }
-  ]
+    pageSize: 10,
+    searchable: true,
+    columnFilters: true,
+    multiSort: true,
+    rowActions: [
+        {
+            id: 'approve',
+            label: 'Approve',
+            onClick: ({ row }) => console.log('approve', row)
+        }
+    ]
 });
 
 table.use(bootstrapThemePlugin());
@@ -56,11 +56,11 @@ table.use(bootstrapThemePlugin());
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vanilla-tables/dist/vanilla-tables.css" />
 <script src="https://cdn.jsdelivr.net/npm/vanilla-tables/dist/vanilla-tables.min.js"></script>
 <script>
-  const table = new VanillaTables.VanillaTable(document.querySelector('#table-root'), data, {
-    fixedHeader: true,
-    fixedFooter: true,
-    fixedColumns: 1
-  }).init();
+    const table = new VanillaTables.VanillaTable(document.querySelector('#table-root'), data, {
+        fixedHeader: true,
+        fixedFooter: true,
+        fixedColumns: 1
+    }).init();
 </script>
 ```
 
@@ -80,31 +80,31 @@ import { createVanillaTable } from 'vanilla-tables';
 import 'vanilla-tables/styles';
 
 const VanillaTableWrapper = ({ data, options }) => {
-  const tableRef = useRef(null);
-  const instanceRef = useRef(null);
+    const tableRef = useRef(null);
+    const instanceRef = useRef(null);
 
-  useEffect(() => {
-    // Mount
-    if (tableRef.current && !instanceRef.current) {
-      instanceRef.current = createVanillaTable(tableRef.current, data, options);
-    }
-    // Destroy
-    return () => {
-      if (instanceRef.current) {
-        instanceRef.current.destroy();
-        instanceRef.current = null;
-      }
-    };
-  }, []);
+    useEffect(() => {
+        // Mount
+        if (tableRef.current && !instanceRef.current) {
+            instanceRef.current = createVanillaTable(tableRef.current, data, options);
+        }
+        // Destroy
+        return () => {
+            if (instanceRef.current) {
+                instanceRef.current.destroy();
+                instanceRef.current = null;
+            }
+        };
+    }, []);
 
-  // Update
-  useEffect(() => {
-    if (instanceRef.current) {
-      instanceRef.current.setData(data);
-    }
-  }, [data]);
+    // Update
+    useEffect(() => {
+        if (instanceRef.current) {
+            instanceRef.current.setData(data);
+        }
+    }, [data]);
 
-  return <div ref={tableRef} />;
+    return <div ref={tableRef} />;
 };
 
 export default VanillaTableWrapper;
@@ -114,7 +114,7 @@ export default VanillaTableWrapper;
 
 ```vue
 <template>
-  <div ref="tableRoot"></div>
+    <div ref="tableRoot"></div>
 </template>
 
 <script setup>
@@ -123,31 +123,35 @@ import { createVanillaTable } from 'vanilla-tables';
 import 'vanilla-tables/styles';
 
 const props = defineProps({
-  data: { type: Array, required: true },
-  options: { type: Object, default: () => ({}) }
+    data: { type: Array, required: true },
+    options: { type: Object, default: () => ({}) }
 });
 
 const tableRoot = ref(null);
 let tableInstance = null;
 
 onMounted(() => {
-  // Mount
-  tableInstance = createVanillaTable(tableRoot.value, props.data, props.options);
+    // Mount
+    tableInstance = createVanillaTable(tableRoot.value, props.data, props.options);
 });
 
 onUnmounted(() => {
-  // Destroy
-  if (tableInstance) {
-    tableInstance.destroy();
-  }
+    // Destroy
+    if (tableInstance) {
+        tableInstance.destroy();
+    }
 });
 
 // Update
-watch(() => props.data, (newData) => {
-  if (tableInstance) {
-    tableInstance.setData(newData);
-  }
-}, { deep: true });
+watch(
+    () => props.data,
+    (newData) => {
+        if (tableInstance) {
+            tableInstance.setData(newData);
+        }
+    },
+    { deep: true }
+);
 </script>
 ```
 
@@ -158,35 +162,35 @@ import { Component, ElementRef, Input, OnChanges, OnDestroy, AfterViewInit, View
 import { createVanillaTable } from 'vanilla-tables';
 
 @Component({
-  selector: 'app-vanilla-table',
-  template: '<div #tableRoot></div>',
-  standalone: true
+    selector: 'app-vanilla-table',
+    template: '<div #tableRoot></div>',
+    standalone: true
 })
 export class VanillaTableComponent implements AfterViewInit, OnChanges, OnDestroy {
-  @ViewChild('tableRoot') tableRoot!: ElementRef;
-  @Input() data: any[] = [];
-  @Input() options: any = {};
-  
-  private tableInstance?: any;
+    @ViewChild('tableRoot') tableRoot!: ElementRef;
+    @Input() data: any[] = [];
+    @Input() options: any = {};
 
-  ngAfterViewInit() {
-    // Mount
-    this.tableInstance = createVanillaTable(this.tableRoot.nativeElement, this.data, this.options);
-  }
+    private tableInstance?: any;
 
-  ngOnChanges(changes: SimpleChanges) {
-    // Update
-    if (this.tableInstance && changes['data']) {
-      this.tableInstance.setData(this.data);
+    ngAfterViewInit() {
+        // Mount
+        this.tableInstance = createVanillaTable(this.tableRoot.nativeElement, this.data, this.options);
     }
-  }
 
-  ngOnDestroy() {
-    // Destroy
-    if (this.tableInstance) {
-      this.tableInstance.destroy();
+    ngOnChanges(changes: SimpleChanges) {
+        // Update
+        if (this.tableInstance && changes['data']) {
+            this.tableInstance.setData(this.data);
+        }
     }
-  }
+
+    ngOnDestroy() {
+        // Destroy
+        if (this.tableInstance) {
+            this.tableInstance.destroy();
+        }
+    }
 }
 ```
 
@@ -225,12 +229,12 @@ export class VanillaTableComponent implements AfterViewInit, OnChanges, OnDestro
 
 Measured via `npm run bench` on local maintainer hardware using current defaults.
 
-| rows | render (ms) | refresh-hit (ms) | search (ms) | sort (ms) | status |
-| --- | --- | --- | --- | --- | --- |
-| 10000 | 14 | 3 | 16 | 6 | OK |
-| 25000 | 47 | 3 | 40 | 7 | OK |
-| 50000 | 59 | 2 | 47 | 12 | OK |
-| 100000 | 104 | 2 | 77 | 15 | STOP (render > 100ms target) |
+| rows   | render (ms) | refresh-hit (ms) | search (ms) | sort (ms) | status                       |
+| ------ | ----------- | ---------------- | ----------- | --------- | ---------------------------- |
+| 10000  | 14          | 3                | 16          | 6         | OK                           |
+| 25000  | 47          | 3                | 40          | 7         | OK                           |
+| 50000  | 59          | 2                | 47          | 12        | OK                           |
+| 100000 | 104         | 2                | 77          | 15        | STOP (render > 100ms target) |
 
 Methodology and reproduction commands: `docs/benchmark-methodology.md`
 
@@ -249,13 +253,13 @@ Built-in theme plugins:
 
 ```js
 const table = createVanillaTable(root, rows, {
-  parallel: {
-    enabled: true,
-    threshold: 20000,
-    workers: 'auto',
-    timeoutMs: 4000,
-    retries: 1
-  }
+    parallel: {
+        enabled: true,
+        threshold: 20000,
+        workers: 'auto',
+        timeoutMs: 4000,
+        retries: 1
+    }
 });
 ```
 
@@ -339,6 +343,7 @@ npm publish --access public
 ```
 
 3. CDN availability:
+
 - jsDelivr: `https://cdn.jsdelivr.net/npm/vanilla-tables/dist/vanilla-tables.min.js`
 - unpkg: `https://unpkg.com/vanilla-tables/dist/vanilla-tables.min.js`
 
