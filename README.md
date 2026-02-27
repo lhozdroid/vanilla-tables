@@ -238,6 +238,19 @@ Measured via `npm run bench` on local maintainer hardware using current defaults
 
 Methodology and reproduction commands: `docs/benchmark-methodology.md`
 
+### Strict Snapshot (2026-02-27)
+
+Measured via `npm run stress:strict` after updating the stress harness to exclude fixture generation from `render_ms`.
+
+| rows   | render (ms) | refresh-hit (ms) | search (ms) | sort (ms) | status                        |
+| ------ | ----------- | ---------------- | ----------- | --------- | ----------------------------- |
+| 25000  | 37          | 1                | 48          | 10        | OK                            |
+| 50000  | 47          | 1                | 60          | 21        | OK                            |
+| 100000 | 95          | 1                | 78          | 30        | OK                            |
+| 200000 | 240         | 1                | 115         | 34        | STOP (render > 100ms target)  |
+
+Current 100ms strict ceiling: `100000` rows on maintainer hardware.
+
 ## Theming
 
 Default output is semantic and framework-neutral (`vt-*`).
@@ -253,13 +266,34 @@ Built-in theme plugins:
 
 ```js
 const table = createVanillaTable(root, rows, {
+    virtualScroll: {
+        enabled: true,
+        adaptiveOverscan: true
+    },
+    virtualColumns: {
+        enabled: true,
+        width: 180,
+        overscan: 2
+    },
     parallel: {
         enabled: true,
         threshold: 20000,
         workers: 'auto',
         timeoutMs: 4000,
-        retries: 1
+        retries: 1,
+        typedColumns: true
     }
+});
+```
+
+## HTML Safety
+
+- `column.render` and `expandRow` may return HTML strings.
+- Use `sanitizeHtml` to sanitize those strings before insertion.
+
+```js
+const table = createVanillaTable(root, rows, {
+    sanitizeHtml: (html) => DOMPurify.sanitize(html)
 });
 ```
 

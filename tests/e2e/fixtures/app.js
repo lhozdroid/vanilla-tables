@@ -160,6 +160,44 @@ function buildScenario(key) {
         };
     }
 
+    if (key === 'virtual-columns') {
+        const wideColumns = [
+            { key: 'id', label: 'ID', editable: false },
+            { key: 'name', label: 'Name' },
+            { key: 'city', label: 'City' },
+            { key: 'age', label: 'Age' },
+            { key: 'status', label: 'Status' },
+            { key: 'c1', label: 'C1' },
+            { key: 'c2', label: 'C2' },
+            { key: 'c3', label: 'C3' },
+            { key: 'c4', label: 'C4' },
+            { key: 'c5', label: 'C5' },
+            { key: 'c6', label: 'C6' }
+        ];
+        const wideRows = rows.map((row) => ({
+            ...row,
+            c1: `${row.id}-1`,
+            c2: `${row.id}-2`,
+            c3: `${row.id}-3`,
+            c4: `${row.id}-4`,
+            c5: `${row.id}-5`,
+            c6: `${row.id}-6`
+        }));
+        return {
+            rows: wideRows,
+            options: {
+                ...shared,
+                columns: wideColumns,
+                virtualColumns: {
+                    enabled: true,
+                    width: 180,
+                    overscan: 1
+                }
+            },
+            plugins: []
+        };
+    }
+
     if (key === 'server') {
         return {
             rows: [],
@@ -228,6 +266,27 @@ function buildScenario(key) {
                     overscan: 6,
                     height: 360
                 }
+            },
+            plugins: []
+        };
+    }
+
+    if (key === 'html-safety') {
+        return {
+            rows: [{ id: '1', name: 'Alice' }],
+            options: {
+                ...shared,
+                columns: [
+                    { key: 'id', label: 'ID', editable: false },
+                    {
+                        key: 'name',
+                        label: 'Name',
+                        render: (value) => `<img src=x onerror=window.__xssCell=true><strong>${value}</strong>`
+                    }
+                ],
+                expandableRows: true,
+                expandRow: () => '<script>window.__xssExpand=true</script><em>Details</em>',
+                sanitizeHtml: (html) => html.replaceAll('<', '&lt;').replaceAll('>', '&gt;')
             },
             plugins: []
         };

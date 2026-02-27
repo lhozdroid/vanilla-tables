@@ -23,12 +23,14 @@ export class HeaderRenderer {
      * @param {Record<string, string>} columnFilters
      * @param {(cell: HTMLElement, visualIndex: number) => void} applyFixedColumn
      * @param {Record<string, number>} columnWidths
+     * @param {{ start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean }} columnWindow
      * @returns {void}
      */
-    render(thead, columns, sortState, columnFilters, applyFixedColumn, columnWidths) {
+    render(thead, columns, sortState, columnFilters, applyFixedColumn, columnWidths, columnWindow) {
         const headRows = [];
         const sortRow = document.createElement('tr');
         sortRow.setAttribute('role', 'row');
+        const visibleColumns = columnWindow?.enabled ? columns.slice(columnWindow.start, columnWindow.end) : columns;
 
         if (this.options.expandableRows) {
             const expandHeader = document.createElement('th');
@@ -36,14 +38,19 @@ export class HeaderRenderer {
             sortRow.appendChild(expandHeader);
         }
 
-        columns.forEach((column, index) => {
+        if (columnWindow?.enabled && columnWindow.leftWidth > 0) {
+            sortRow.appendChild(createSpacerHeader(columnWindow.leftWidth));
+        }
+
+        visibleColumns.forEach((column, index) => {
             const th = document.createElement('th');
             th.className = this.theme.classOf('headerCell', 'vt-header-cell');
             th.dataset.key = column.key;
             th.draggable = Boolean(this.options.columnReorder);
             th.tabIndex = 0;
             th.setAttribute('role', 'columnheader');
-            applyFixedColumn(th, index + (this.options.expandableRows ? 1 : 0));
+            const baseIndex = columnWindow?.enabled ? columnWindow.start + index : index;
+            applyFixedColumn(th, baseIndex + (this.options.expandableRows ? 1 : 0));
 
             if (columnWidths[column.key]) {
                 th.style.width = `${columnWidths[column.key]}px`;
@@ -76,6 +83,10 @@ export class HeaderRenderer {
             sortRow.appendChild(th);
         });
 
+        if (columnWindow?.enabled && columnWindow.rightWidth > 0) {
+            sortRow.appendChild(createSpacerHeader(columnWindow.rightWidth));
+        }
+
         if (this.options.rowActions.length) {
             const actionTh = document.createElement('th');
             actionTh.textContent = this.options.labels.actions;
@@ -96,10 +107,15 @@ export class HeaderRenderer {
                 filterRow.appendChild(expandFilterHeader);
             }
 
-            columns.forEach((column, index) => {
+            if (columnWindow?.enabled && columnWindow.leftWidth > 0) {
+                filterRow.appendChild(createSpacerHeader(columnWindow.leftWidth));
+            }
+
+            visibleColumns.forEach((column, index) => {
                 const th = document.createElement('th');
                 th.className = this.theme.classOf('filterHeaderCell', 'vt-filter-header-cell');
-                applyFixedColumn(th, index + (this.options.expandableRows ? 1 : 0));
+                const baseIndex = columnWindow?.enabled ? columnWindow.start + index : index;
+                applyFixedColumn(th, baseIndex + (this.options.expandableRows ? 1 : 0));
                 if (column.filterable === false) {
                     filterRow.appendChild(th);
                     return;
@@ -113,6 +129,10 @@ export class HeaderRenderer {
                 th.appendChild(input);
                 filterRow.appendChild(th);
             });
+
+            if (columnWindow?.enabled && columnWindow.rightWidth > 0) {
+                filterRow.appendChild(createSpacerHeader(columnWindow.rightWidth));
+            }
 
             if (this.options.rowActions.length) {
                 filterRow.appendChild(document.createElement('th'));
@@ -130,6 +150,22 @@ export class HeaderRenderer {
             appendClassNames(thead, this.theme.classOf('fixedHeader', 'vt-fixed-header'));
         }
     }
+}
+
+/**
+ * Creates one spacer header cell used for column virtualization.
+ *
+ * @param {number} width
+ * @returns {HTMLTableCellElement}
+ */
+function createSpacerHeader(width) {
+    const th = document.createElement('th');
+    th.className = 'vt-col-spacer';
+    th.style.width = `${width}px`;
+    th.style.minWidth = `${width}px`;
+    th.style.padding = '0';
+    th.style.border = 'none';
+    return th;
 }
 
 /**

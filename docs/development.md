@@ -22,6 +22,16 @@ npm run bench
 npm run bench:memory
 ```
 
+Performance-focused checks:
+
+```bash
+# Validates virtual row/column rendering and interaction flows.
+npm run test:e2e -- tests/e2e/layout-and-virtual.spec.js
+
+# Validates HTML sanitization path for render callbacks.
+npm run test:e2e -- tests/e2e/html-safety.spec.js
+```
+
 ## Release Verification
 
 Before publish:
@@ -46,3 +56,4 @@ npm run release:verify
 - Keep core framework-independent and dependency-light.
 - Add behavior through options, hooks, or plugins.
 - Preserve public API compatibility unless planning a major version change.
+- Keep high-cost optimizations optional (`virtualScroll`, `virtualColumns`, `parallel`).

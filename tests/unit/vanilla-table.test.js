@@ -297,4 +297,49 @@ describe('VanillaTable', () => {
             expect(root.querySelector('.vt-action-select')).not.toBeNull();
         });
     });
+
+    it('sanitizes render and expand HTML when sanitizeHtml is provided', () => {
+        const root = document.getElementById('app');
+        const table = new VanillaTable(
+            root,
+            [{ id: 1, name: 'Alice' }],
+            {
+                columns: [
+                    {
+                        key: 'name',
+                        label: 'Name',
+                        render: (value) => `<strong>${value}</strong>`
+                    }
+                ],
+                expandableRows: true,
+                expandRow: () => '<em>Details</em>',
+                sanitizeHtml: (html) => html.replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+            }
+        ).init();
+
+        return table.expandRow('1').then(() => {
+            const bodyCell = root.querySelector('tbody tr.vt-row td[data-key="name"]');
+            const expandedCell = root.querySelector('.vt-expand-content');
+            expect(bodyCell.innerHTML).toContain('&lt;strong&gt;Alice&lt;/strong&gt;');
+            expect(expandedCell.innerHTML).toContain('&lt;em&gt;Details&lt;/em&gt;');
+        });
+    });
+
+    it('escapes shell labels to prevent markup injection', () => {
+        const root = document.getElementById('app');
+        new VanillaTable(root, rows, {
+            i18n: {
+                rows: '<img src=x onerror=alert(1)>',
+                search: '<script>bad()</script>',
+                first: '<b>First</b>',
+                prev: '<b>Prev</b>',
+                next: '<b>Next</b>',
+                last: '<b>Last</b>'
+            }
+        }).init();
+
+        expect(root.querySelector('.vt-controls span').textContent).toContain('<img src=x onerror=alert(1)>');
+        expect(root.querySelectorAll('script')).toHaveLength(0);
+        expect(root.querySelector('.vt-first').textContent).toBe('<b>First</b>');
+    });
 });

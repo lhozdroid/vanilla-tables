@@ -15,7 +15,7 @@ export class StateStore {
         /** @type {{ page: number, pageSize: number, searchTerm: string, columnFilters: Record<string, string>, sorts: { key: string, direction: 'asc'|'desc' }[], columnOrder: string[], columnWidths: Record<string, number>, columnVisibility: Record<string, boolean> }} */
         this.state = {
             page: 1,
-            pageSize,
+            pageSize: normalizePageSize(pageSize),
             searchTerm: '',
             columnFilters: {},
             sorts: initialSort ? [{ key: initialSort.key, direction: initialSort.direction || 'asc' }] : [],
@@ -30,9 +30,11 @@ export class StateStore {
         this.revision = 0;
         /** @type {{ rowsVersion: number, columnsKey: string, searchTerm: string, filtersKey: string, rows: Record<string, any>[] } | null} */
         this.filterCache = null;
+        /** @type {{ rowsVersion: number, columnsKey: string, sortsKey: string, comparator: (left: number, right: number) => number, sourceText: Map<string, string[]>, sourceNumeric: Map<string, { values: Float64Array, flags: Uint8Array }> } | null} */
+        this.sortComparatorCache = null;
         /** @type {{ revision: number, columnsKey: string, rows: Record<string, any>[] } | null} */
         this.projectionCache = null;
-        /** @type {{ rowsVersion: number, columnsKey: string, rows: Record<string, any>[], rowIndex: WeakMap<Record<string, any>, number>, textByKey: Map<string, string[]>, numericByKey: Map<string, { values: Float64Array, flags: Uint8Array }>, hasAlphaByKey: Map<string, boolean> } | null} */
+        /** @type {{ rowsVersion: number, columnsKey: string, rows: Record<string, any>[], rowIndex: WeakMap<Record<string, any>, number>, textByKey: Map<string, string[]>, numericByKey: Map<string, { values: Float64Array, flags: Uint8Array }>, hasAlphaByKey: Map<string, boolean>, tokenRowIdsByKey: Map<string, Map<string, number[]>>, sortedOrderByKey: Map<string, Int32Array> } | null} */
         this.columnIndexCache = null;
         const parallelWorkers = resolveParallelWorkers(parallel?.workers);
         /** @type {{ enabled: boolean, threshold: number, workers: number, timeoutMs: number, retries: number }} */
@@ -124,7 +126,7 @@ export class StateStore {
      * @returns {void}
      */
     setPage(page) {
-        this.state.page = Math.max(1, page);
+        this.state.page = normalizePage(page);
     }
 
     /**
@@ -134,7 +136,7 @@ export class StateStore {
      * @returns {void}
      */
     setPageSize(pageSize) {
-        this.state.pageSize = pageSize;
+        this.state.pageSize = normalizePageSize(pageSize);
         this.state.page = 1;
     }
 
@@ -243,15 +245,24 @@ export class StateStore {
         if (!payload) return;
         let affectsProjection = false;
         let affectsFilters = false;
-        if (typeof payload.page === 'number') this.state.page = Math.max(1, payload.page);
-        if (typeof payload.pageSize === 'number') this.state.pageSize = payload.pageSize;
+        if (typeof payload.page === 'number') this.state.page = normalizePage(payload.page);
+        if (typeof payload.pageSize === 'number') this.state.pageSize = normalizePageSize(payload.pageSize);
         if (typeof payload.searchTerm === 'string') {
-            this.state.searchTerm = payload.searchTerm;
+            this.state.searchTerm = payload.searchTerm.toLowerCase().trim();
             affectsProjection = true;
             affectsFilters = true;
         }
         if (payload.columnFilters && typeof payload.columnFilters === 'object') {
-            this.state.columnFilters = { ...payload.columnFilters };
+            const nextFilters = {};
+            for (const [key, value] of Object.entries(payload.columnFilters)) {
+                const normalized = String(value ?? '')
+                    .toLowerCase()
+                    .trim();
+                if (normalized) {
+                    nextFilters[key] = normalized;
+                }
+            }
+            this.state.columnFilters = nextFilters;
             affectsProjection = true;
             affectsFilters = true;
         }
@@ -486,6 +497,7 @@ export class StateStore {
     invalidateProjection() {
         this.revision += 1;
         this.projectionCache = null;
+        this.sortComparatorCache = null;
     }
 
     /**
@@ -658,7 +670,8 @@ export class StateStore {
             return this.filterCache.rows;
         }
 
-        const rows = this.applyFiltersAndSearch(this.rows, columns);
+        const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+        const rows = this.applyFiltersAndSearch(baseRows, columns);
         this.filterCache = {
             rowsVersion: this.rowsVersion,
             columnsKey,
@@ -684,7 +697,8 @@ export class StateStore {
         }
 
         if (!this.canUseWorkerProjection()) {
-            const rows = this.applyFiltersAndSearch(this.rows, columns);
+            const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+            const rows = this.applyFiltersAndSearch(baseRows, columns);
             this.filterCache = {
                 rowsVersion: this.rowsVersion,
                 columnsKey,
@@ -719,7 +733,8 @@ export class StateStore {
                 this.projectionWorkerPool?.destroy();
                 this.projectionWorkerPool = null;
 
-                const rows = this.applyFiltersAndSearch(this.rows, columns);
+                const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+                const rows = this.applyFiltersAndSearch(baseRows, columns);
                 this.filterCache = {
                     rowsVersion: this.rowsVersion,
                     columnsKey,
@@ -753,9 +768,12 @@ export class StateStore {
                 text: this.getIndexedText(index, key)
             }));
             const searchColumns = searchTerm ? this.getSearchableKeys(index, keys, searchTerm).map((key) => this.getIndexedText(index, key)) : null;
+            const candidateIds = searchTerm ? this.getSearchCandidateIds(index, keys, searchTerm) : null;
             const output = [];
 
-            for (let i = 0; i < rows.length; i += 1) {
+            const iterate = candidateIds || Array.from({ length: rows.length }, (_, rowIndex) => rowIndex);
+            for (let pointer = 0; pointer < iterate.length; pointer += 1) {
+                const i = iterate[pointer];
                 let matchesFilters = true;
                 for (const filterColumn of filterColumns) {
                     if (!filterColumn.text[i].includes(filterColumn.term)) {
@@ -833,84 +851,18 @@ export class StateStore {
         if (!sorts.length) return rows;
 
         const rowCount = rows.length;
-        const order = Array.from({ length: rowCount }).map((_, index) => index);
-        const index = this.getColumnIndex(columns);
-        const sourceIndexes = new Int32Array(rowCount);
-        let allIndexed = true;
-        for (let i = 0; i < rowCount; i += 1) {
-            const sourceIndex = index.rowIndex.get(rows[i]);
-            if (sourceIndex === undefined) {
-                allIndexed = false;
-                break;
-            }
-            sourceIndexes[i] = sourceIndex;
-        }
-
-        const descriptors = sorts.map((sort) => {
-            const text = new Array(rowCount);
-            const num = new Float64Array(rowCount);
-            const isNum = new Uint8Array(rowCount);
-            const indexedText = allIndexed ? this.getIndexedText(index, sort.key) : null;
-            const indexedNumeric = allIndexed ? this.getIndexedNumeric(index, sort.key) : null;
-
+        if (rows === this.rows && rowCount > 5000) {
+            const index = this.getColumnIndex(columns);
+            const orderKey = serializeSorts(sorts);
+            const sourceOrder = this.getSortedOrder(index, sorts, orderKey);
+            const output = new Array(rowCount);
             for (let i = 0; i < rowCount; i += 1) {
-                if (indexedText && indexedNumeric) {
-                    const sourceIndex = sourceIndexes[i];
-                    text[i] = indexedText[sourceIndex];
-                    isNum[i] = indexedNumeric.flags[sourceIndex];
-                    num[i] = indexedNumeric.values[sourceIndex];
-                    continue;
-                }
-
-                const raw = rows[i]?.[sort.key];
-                const parsed = Number(raw);
-                text[i] = String(raw ?? '').toLowerCase();
-                if (Number.isFinite(parsed)) {
-                    isNum[i] = 1;
-                    num[i] = parsed;
-                }
+                output[i] = rows[sourceOrder[i]];
             }
-
-            return {
-                direction: sort.direction,
-                multiplier: sort.direction === 'desc' ? -1 : 1,
-                text,
-                num,
-                isNum
-            };
-        });
-
-        const comparator =
-            descriptors.length === 1
-                ? (leftIndex, rightIndex) => {
-                      const descriptor = descriptors[0];
-                      const bothNumeric = descriptor.isNum[leftIndex] && descriptor.isNum[rightIndex];
-                      if (bothNumeric) {
-                          const diff = descriptor.num[leftIndex] - descriptor.num[rightIndex];
-                          if (diff !== 0) return diff * descriptor.multiplier;
-                      } else {
-                          const leftText = descriptor.text[leftIndex];
-                          const rightText = descriptor.text[rightIndex];
-                          if (leftText < rightText) return -1 * descriptor.multiplier;
-                          if (leftText > rightText) return 1 * descriptor.multiplier;
-                      }
-                      return leftIndex - rightIndex;
-                  }
-                : (leftIndex, rightIndex) => {
-                      for (const descriptor of descriptors) {
-                          const bothNumeric = descriptor.isNum[leftIndex] && descriptor.isNum[rightIndex];
-                          if (bothNumeric) {
-                              const diff = descriptor.num[leftIndex] - descriptor.num[rightIndex];
-                              if (diff !== 0) return diff * descriptor.multiplier;
-                              continue;
-                          }
-                          const leftText = descriptor.text[leftIndex];
-                          const rightText = descriptor.text[rightIndex];
-                          if (leftText < rightText) return -1 * descriptor.multiplier;
-                          if (leftText > rightText) return 1 * descriptor.multiplier;
-                      }
-                      return leftIndex - rightIndex;
-                  };
+            return output;
+        }
+        const order = Array.from({ length: rowCount }).map((_, index) => index);
+        const comparator = this.getCompiledSortComparator(columns, sorts, rows);
 
         if (rowCount < 5000) {
             mergeSort(order, comparator);
@@ -923,6 +875,97 @@ export class StateStore {
             output[i] = rows[order[i]];
         }
         return output;
+    }
+
+    /**
+     * Returns a narrowed base row set for incremental query updates when possible.
+     *
+     * @param {string} columnsKey
+     * @param {string} searchTerm
+     * @param {string} filtersKey
+     * @returns {Record<string, any>[]}
+     */
+    resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey) {
+        if (!this.filterCache) return this.rows;
+        if (this.filterCache.rowsVersion !== this.rowsVersion) return this.rows;
+        if (this.filterCache.columnsKey !== columnsKey) return this.rows;
+        if (!isIncrementalRefinement(this.filterCache.searchTerm, searchTerm)) return this.rows;
+        if (!isIncrementalFilterRefinement(this.filterCache.filtersKey, filtersKey)) return this.rows;
+        return this.filterCache.rows;
+    }
+
+    /**
+     * Returns a compiled row-index comparator for the current sort state.
+     *
+     * @param {{ key: string }[]} columns
+     * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+     * @param {Record<string, any>[]} rows
+     * @returns {(left: number, right: number) => number}
+     */
+    getCompiledSortComparator(columns, sorts, rows) {
+        const columnsKey = this.getColumnsKey(columns);
+        const sortsKey = serializeSorts(sorts);
+        const index = this.getColumnIndex(columns);
+        if (this.sortComparatorCache && this.sortComparatorCache.rowsVersion === this.rowsVersion && this.sortComparatorCache.columnsKey === columnsKey && this.sortComparatorCache.sortsKey === sortsKey) {
+            return this.buildLocalComparator(this.sortComparatorCache.comparator, rows, index.rowIndex);
+        }
+
+        const sourceText = new Map();
+        const sourceNumeric = new Map();
+        for (const sort of sorts) {
+            sourceText.set(sort.key, this.getIndexedText(index, sort.key));
+            sourceNumeric.set(sort.key, this.getIndexedNumeric(index, sort.key));
+        }
+
+        const comparator = (leftSourceIndex, rightSourceIndex) => {
+            for (const sort of sorts) {
+                const numeric = sourceNumeric.get(sort.key);
+                const text = sourceText.get(sort.key);
+                const bothNumeric = numeric.flags[leftSourceIndex] && numeric.flags[rightSourceIndex];
+                let cmp = 0;
+                if (bothNumeric) {
+                    cmp = numeric.values[leftSourceIndex] - numeric.values[rightSourceIndex];
+                } else {
+                    const leftText = text[leftSourceIndex];
+                    const rightText = text[rightSourceIndex];
+                    if (leftText < rightText) cmp = -1;
+                    else if (leftText > rightText) cmp = 1;
+                }
+                if (cmp !== 0) return sort.direction === 'desc' ? -cmp : cmp;
+            }
+            return leftSourceIndex - rightSourceIndex;
+        };
+
+        this.sortComparatorCache = {
+            rowsVersion: this.rowsVersion,
+            columnsKey,
+            sortsKey,
+            comparator,
+            sourceText,
+            sourceNumeric
+        };
+        return this.buildLocalComparator(comparator, rows, index.rowIndex);
+    }
+
+    /**
+     * Maps source-index comparator to local row-order comparator.
+     *
+     * @param {(leftSourceIndex: number, rightSourceIndex: number) => number} sourceComparator
+     * @param {Record<string, any>[]} rows
+     * @param {WeakMap<Record<string, any>, number>} rowIndex
+     * @returns {(left: number, right: number) => number}
+     */
+    buildLocalComparator(sourceComparator, rows, rowIndex) {
+        return (leftIndex, rightIndex) => {
+            const leftSource = rowIndex.get(rows[leftIndex]);
+            const rightSource = rowIndex.get(rows[rightIndex]);
+            if (leftSource === undefined || rightSource === undefined) {
+                return leftIndex - rightIndex;
+            }
+            const cmp = sourceComparator(leftSource, rightSource);
+            if (cmp !== 0) return cmp;
+            return leftIndex - rightIndex;
+        };
     }
 
     /**
@@ -974,9 +1017,124 @@ export class StateStore {
             textByKey: new Map(),
             rowIndex,
             numericByKey: new Map(),
-            hasAlphaByKey: new Map()
+            hasAlphaByKey: new Map(),
+            tokenRowIdsByKey: new Map(),
+            sortedOrderByKey: new Map()
         };
         return this.columnIndexCache;
+    }
+
+    /**
+     * Returns candidate row indexes from token index for a search term.
+     *
+     * @param {{ tokenRowIdsByKey: Map<string, Map<string, number[]>> }} index
+     * @param {string[]} keys
+     * @param {string} term
+     * @returns {number[] | null}
+     */
+    getSearchCandidateIds(index, keys, term) {
+        const tokens = tokenize(term);
+        if (!tokens.length) return null;
+        if (tokens.length === 1) return null;
+        let working = null;
+
+        for (const token of tokens) {
+            if (token.length < 2) return null;
+            let union = null;
+            for (const key of keys) {
+                const tokenMap = this.getTokenMap(index, key);
+                for (const [indexedToken, ids] of tokenMap.entries()) {
+                    if (!indexedToken.includes(token)) continue;
+                    if (!union) {
+                        union = new Set(ids);
+                        continue;
+                    }
+                    for (const id of ids) union.add(id);
+                }
+            }
+            if (!union || union.size === 0) return [];
+            if (!working) {
+                working = union;
+                continue;
+            }
+            working = intersectSets(working, union);
+            if (working.size === 0) return [];
+        }
+
+        return working ? [...working] : null;
+    }
+
+    /**
+     * Returns per-column token index map.
+     *
+     * @param {{ rows: Record<string, any>[], tokenRowIdsByKey: Map<string, Map<string, number[]>> }} index
+     * @param {string} key
+     * @returns {Map<string, number[]>}
+     */
+    getTokenMap(index, key) {
+        const cached = index.tokenRowIdsByKey.get(key);
+        if (cached) return cached;
+
+        const map = new Map();
+        for (let i = 0; i < index.rows.length; i += 1) {
+            const value = String(index.rows[i]?.[key] ?? '').toLowerCase();
+            const tokens = tokenize(value);
+            for (const token of tokens) {
+                const bucket = map.get(token);
+                if (bucket) {
+                    bucket.push(i);
+                } else {
+                    map.set(token, [i]);
+                }
+            }
+        }
+        index.tokenRowIdsByKey.set(key, map);
+        return map;
+    }
+
+    /**
+     * Returns cached sorted source row order for full-dataset sorts.
+     *
+     * @param {{ rows: Record<string, any>[], sortedOrderByKey: Map<string, Int32Array> }} index
+     * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+     * @param {string} orderKey
+     * @returns {Int32Array}
+     */
+    getSortedOrder(index, sorts, orderKey) {
+        const cached = index.sortedOrderByKey.get(orderKey);
+        if (cached) return cached;
+
+        const order = new Int32Array(index.rows.length);
+        for (let i = 0; i < index.rows.length; i += 1) {
+            order[i] = i;
+        }
+        const list = Array.from(order);
+        const comparator = (left, right) => {
+            const leftRow = index.rows[left];
+            const rightRow = index.rows[right];
+            for (const sort of sorts) {
+                const leftRaw = leftRow?.[sort.key];
+                const rightRaw = rightRow?.[sort.key];
+                const leftNum = Number(leftRaw);
+                const rightNum = Number(rightRaw);
+                const bothNumeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
+                let cmp = 0;
+                if (bothNumeric) {
+                    cmp = leftNum - rightNum;
+                } else {
+                    const leftText = String(leftRaw ?? '').toLowerCase();
+                    const rightText = String(rightRaw ?? '').toLowerCase();
+                    if (leftText < rightText) cmp = -1;
+                    else if (leftText > rightText) cmp = 1;
+                }
+                if (cmp !== 0) return sort.direction === 'desc' ? -cmp : cmp;
+            }
+            return left - right;
+        };
+        list.sort(comparator);
+        const output = Int32Array.from(list);
+        index.sortedOrderByKey.set(orderKey, output);
+        return output;
     }
 
     /**
@@ -1064,6 +1222,28 @@ export class StateStore {
     }
 }
 
+/**
+ * Normalizes a page number into a valid positive integer.
+ *
+ * @param {number} page
+ * @returns {number}
+ */
+function normalizePage(page) {
+    if (!Number.isFinite(page)) return 1;
+    return Math.max(1, Math.floor(page));
+}
+
+/**
+ * Normalizes a page size into a valid positive integer.
+ *
+ * @param {number} pageSize
+ * @returns {number}
+ */
+function normalizePageSize(pageSize) {
+    if (!Number.isFinite(pageSize)) return 1;
+    return Math.max(1, Math.floor(pageSize));
+}
+
 /** @type {RegExp} */
 const HAS_ALPHA_RE = /[a-z]/;
 
@@ -1078,6 +1258,85 @@ function compareText(left, right) {
     if (left < right) return -1;
     if (left > right) return 1;
     return 0;
+}
+
+/**
+ * Returns whether next query is a narrowing form of previous.
+ *
+ * @param {string} previous
+ * @param {string} next
+ * @returns {boolean}
+ */
+function isIncrementalRefinement(previous, next) {
+    return next.startsWith(previous);
+}
+
+/**
+ * Returns whether next active filter set refines previous.
+ *
+ * @param {string} previous
+ * @param {string} next
+ * @returns {boolean}
+ */
+function isIncrementalFilterRefinement(previous, next) {
+    if (!previous) return true;
+    if (!next) return false;
+    const previousEntries = previous.split('|').filter(Boolean);
+    const nextEntries = new Map(next.split('|').filter(Boolean).map((entry) => {
+        const separator = entry.indexOf(':');
+        const key = separator >= 0 ? entry.slice(0, separator) : entry;
+        const value = separator >= 0 ? entry.slice(separator + 1) : '';
+        return [key, value];
+    }));
+    for (const entry of previousEntries) {
+        const separator = entry.indexOf(':');
+        const key = separator >= 0 ? entry.slice(0, separator) : entry;
+        const value = separator >= 0 ? entry.slice(separator + 1) : '';
+        const nextValue = nextEntries.get(key);
+        if (typeof nextValue !== 'string') return false;
+        if (!nextValue.startsWith(value)) return false;
+    }
+    return true;
+}
+
+/**
+ * Serializes sort definitions for cache keying.
+ *
+ * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+ * @returns {string}
+ */
+function serializeSorts(sorts) {
+    return sorts.map((sort) => `${sort.key}:${sort.direction}`).join('|');
+}
+
+/**
+ * Tokenizes one lowercase string for inverted index usage.
+ *
+ * @param {string} value
+ * @returns {string[]}
+ */
+function tokenize(value) {
+    return value
+        .split(/[^a-z0-9]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+/**
+ * Intersects two sets.
+ *
+ * @param {Set<number>} left
+ * @param {Set<number>} right
+ * @returns {Set<number>}
+ */
+function intersectSets(left, right) {
+    const small = left.size < right.size ? left : right;
+    const large = left.size < right.size ? right : left;
+    const output = new Set();
+    for (const value of small) {
+        if (large.has(value)) output.add(value);
+    }
+    return output;
 }
 
 /**

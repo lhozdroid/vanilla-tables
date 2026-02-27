@@ -17,6 +17,8 @@ npm run bench:memory
 - Default thresholds: render <= 100ms, refresh-hit <= 100ms, search <= 100ms, sort <= 100ms
 - Default sampling: warmup-runs=1, repeat-runs=1 (median)
 - Default endpoint: `http://127.0.0.1:4173`
+- `render_ms` measures table initialization + first render path only (row fixture generation is excluded).
+- For release-quality comparisons, prefer: `STRESS_WARMUP_RUNS=2 STRESS_REPEAT_RUNS=5`.
 
 ## Memory Benchmark Notes
 

@@ -28,14 +28,21 @@ export const defaultOptions = {
         enabled: false,
         rowHeight: 40,
         overscan: 6,
-        height: 420
+        height: 420,
+        adaptiveOverscan: true
+    },
+    virtualColumns: {
+        enabled: false,
+        width: 180,
+        overscan: 2
     },
     parallel: {
         enabled: true,
         threshold: 20000,
         workers: 'auto',
         timeoutMs: 4000,
-        retries: 1
+        retries: 1,
+        typedColumns: true
     },
     persistence: {
         enabled: false,
@@ -53,6 +60,7 @@ export const defaultOptions = {
     },
     themeClasses: {},
     expandRow: null,
+    sanitizeHtml: null,
     i18n: defaultI18n,
     labels: {
         search: defaultI18n.search,

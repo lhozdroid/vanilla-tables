@@ -154,4 +154,39 @@ describe('StateStore branch coverage', () => {
             expect(store.projectionWorkerPool).toBeNull();
         });
     });
+
+    it('supports incremental narrowing without stale broadening results', () => {
+        const rows = Array.from({ length: 200 }).map((_, index) => ({
+            id: index + 1,
+            name: index % 2 === 0 ? `Alpha ${index}` : `Beta ${index}`,
+            city: index % 3 === 0 ? 'Paris' : 'Rome'
+        }));
+        const store = new StateStore({ rows, pageSize: 200, initialSort: null });
+        const queryColumns = [{ key: 'name' }, { key: 'city' }];
+
+        store.setSearchTerm('alpha');
+        const broad = store.getVisibleRows(queryColumns).rows.length;
+        store.setSearchTerm('alpha 1');
+        const narrow = store.getVisibleRows(queryColumns).rows.length;
+        store.setSearchTerm('beta 19');
+        const switched = store.getVisibleRows(queryColumns).rows.length;
+
+        expect(narrow).toBeLessThanOrEqual(broad);
+        expect(switched).toBeGreaterThan(0);
+        expect(switched).not.toBe(narrow);
+    });
+
+    it('applies token-index search semantics for multi-token terms', () => {
+        const rows = [
+            { id: 1, name: 'alice paris', city: 'paris' },
+            { id: 2, name: 'alice', city: 'rome' },
+            { id: 3, name: 'cooper', city: 'paris' }
+        ];
+        const store = new StateStore({ rows, pageSize: 10, initialSort: null });
+        store.setSearchTerm('alice paris');
+
+        const view = store.getVisibleRows([{ key: 'name' }, { key: 'city' }]);
+        expect(view.rows).toHaveLength(1);
+        expect(view.rows[0].id).toBe(1);
+    });
 });
