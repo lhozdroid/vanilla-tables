@@ -34,7 +34,7 @@ export class StateStore {
         this.sortComparatorCache = null;
         /** @type {{ revision: number, columnsKey: string, rows: Record<string, any>[] } | null} */
         this.projectionCache = null;
-        /** @type {{ rowsVersion: number, columnsKey: string, rows: Record<string, any>[], rowIndex: WeakMap<Record<string, any>, number>, textByKey: Map<string, string[]>, numericByKey: Map<string, { values: Float64Array, flags: Uint8Array }>, hasAlphaByKey: Map<string, boolean> } | null} */
+        /** @type {{ rowsVersion: number, columnsKey: string, rows: Record<string, any>[], rowIndex: WeakMap<Record<string, any>, number>, textByKey: Map<string, string[]>, numericByKey: Map<string, { values: Float64Array, flags: Uint8Array }>, hasAlphaByKey: Map<string, boolean>, tokenRowIdsByKey: Map<string, Map<string, number[]>>, sortedOrderByKey: Map<string, Int32Array> } | null} */
         this.columnIndexCache = null;
         const parallelWorkers = resolveParallelWorkers(parallel?.workers);
         /** @type {{ enabled: boolean, threshold: number, workers: number, timeoutMs: number, retries: number }} */
@@ -768,9 +768,12 @@ export class StateStore {
                 text: this.getIndexedText(index, key)
             }));
             const searchColumns = searchTerm ? this.getSearchableKeys(index, keys, searchTerm).map((key) => this.getIndexedText(index, key)) : null;
+            const candidateIds = searchTerm ? this.getSearchCandidateIds(index, keys, searchTerm) : null;
             const output = [];
 
-            for (let i = 0; i < rows.length; i += 1) {
+            const iterate = candidateIds || Array.from({ length: rows.length }, (_, rowIndex) => rowIndex);
+            for (let pointer = 0; pointer < iterate.length; pointer += 1) {
+                const i = iterate[pointer];
                 let matchesFilters = true;
                 for (const filterColumn of filterColumns) {
                     if (!filterColumn.text[i].includes(filterColumn.term)) {
@@ -848,6 +851,16 @@ export class StateStore {
         if (!sorts.length) return rows;
 
         const rowCount = rows.length;
+        if (rows === this.rows && rowCount > 5000) {
+            const index = this.getColumnIndex(columns);
+            const orderKey = serializeSorts(sorts);
+            const sourceOrder = this.getSortedOrder(index, sorts, orderKey);
+            const output = new Array(rowCount);
+            for (let i = 0; i < rowCount; i += 1) {
+                output[i] = rows[sourceOrder[i]];
+            }
+            return output;
+        }
         const order = Array.from({ length: rowCount }).map((_, index) => index);
         const comparator = this.getCompiledSortComparator(columns, sorts, rows);
 
@@ -1004,9 +1017,124 @@ export class StateStore {
             textByKey: new Map(),
             rowIndex,
             numericByKey: new Map(),
-            hasAlphaByKey: new Map()
+            hasAlphaByKey: new Map(),
+            tokenRowIdsByKey: new Map(),
+            sortedOrderByKey: new Map()
         };
         return this.columnIndexCache;
+    }
+
+    /**
+     * Returns candidate row indexes from token index for a search term.
+     *
+     * @param {{ tokenRowIdsByKey: Map<string, Map<string, number[]>> }} index
+     * @param {string[]} keys
+     * @param {string} term
+     * @returns {number[] | null}
+     */
+    getSearchCandidateIds(index, keys, term) {
+        const tokens = tokenize(term);
+        if (!tokens.length) return null;
+        if (tokens.length === 1) return null;
+        let working = null;
+
+        for (const token of tokens) {
+            if (token.length < 2) return null;
+            let union = null;
+            for (const key of keys) {
+                const tokenMap = this.getTokenMap(index, key);
+                for (const [indexedToken, ids] of tokenMap.entries()) {
+                    if (!indexedToken.includes(token)) continue;
+                    if (!union) {
+                        union = new Set(ids);
+                        continue;
+                    }
+                    for (const id of ids) union.add(id);
+                }
+            }
+            if (!union || union.size === 0) return [];
+            if (!working) {
+                working = union;
+                continue;
+            }
+            working = intersectSets(working, union);
+            if (working.size === 0) return [];
+        }
+
+        return working ? [...working] : null;
+    }
+
+    /**
+     * Returns per-column token index map.
+     *
+     * @param {{ rows: Record<string, any>[], tokenRowIdsByKey: Map<string, Map<string, number[]>> }} index
+     * @param {string} key
+     * @returns {Map<string, number[]>}
+     */
+    getTokenMap(index, key) {
+        const cached = index.tokenRowIdsByKey.get(key);
+        if (cached) return cached;
+
+        const map = new Map();
+        for (let i = 0; i < index.rows.length; i += 1) {
+            const value = String(index.rows[i]?.[key] ?? '').toLowerCase();
+            const tokens = tokenize(value);
+            for (const token of tokens) {
+                const bucket = map.get(token);
+                if (bucket) {
+                    bucket.push(i);
+                } else {
+                    map.set(token, [i]);
+                }
+            }
+        }
+        index.tokenRowIdsByKey.set(key, map);
+        return map;
+    }
+
+    /**
+     * Returns cached sorted source row order for full-dataset sorts.
+     *
+     * @param {{ rows: Record<string, any>[], sortedOrderByKey: Map<string, Int32Array> }} index
+     * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+     * @param {string} orderKey
+     * @returns {Int32Array}
+     */
+    getSortedOrder(index, sorts, orderKey) {
+        const cached = index.sortedOrderByKey.get(orderKey);
+        if (cached) return cached;
+
+        const order = new Int32Array(index.rows.length);
+        for (let i = 0; i < index.rows.length; i += 1) {
+            order[i] = i;
+        }
+        const list = Array.from(order);
+        const comparator = (left, right) => {
+            const leftRow = index.rows[left];
+            const rightRow = index.rows[right];
+            for (const sort of sorts) {
+                const leftRaw = leftRow?.[sort.key];
+                const rightRaw = rightRow?.[sort.key];
+                const leftNum = Number(leftRaw);
+                const rightNum = Number(rightRaw);
+                const bothNumeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
+                let cmp = 0;
+                if (bothNumeric) {
+                    cmp = leftNum - rightNum;
+                } else {
+                    const leftText = String(leftRaw ?? '').toLowerCase();
+                    const rightText = String(rightRaw ?? '').toLowerCase();
+                    if (leftText < rightText) cmp = -1;
+                    else if (leftText > rightText) cmp = 1;
+                }
+                if (cmp !== 0) return sort.direction === 'desc' ? -cmp : cmp;
+            }
+            return left - right;
+        };
+        list.sort(comparator);
+        const output = Int32Array.from(list);
+        index.sortedOrderByKey.set(orderKey, output);
+        return output;
     }
 
     /**
@@ -1179,6 +1307,36 @@ function isIncrementalFilterRefinement(previous, next) {
  */
 function serializeSorts(sorts) {
     return sorts.map((sort) => `${sort.key}:${sort.direction}`).join('|');
+}
+
+/**
+ * Tokenizes one lowercase string for inverted index usage.
+ *
+ * @param {string} value
+ * @returns {string[]}
+ */
+function tokenize(value) {
+    return value
+        .split(/[^a-z0-9]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+/**
+ * Intersects two sets.
+ *
+ * @param {Set<number>} left
+ * @param {Set<number>} right
+ * @returns {Set<number>}
+ */
+function intersectSets(left, right) {
+    const small = left.size < right.size ? left : right;
+    const large = left.size < right.size ? right : left;
+    const output = new Set();
+    for (const value of small) {
+        if (large.has(value)) output.add(value);
+    }
+    return output;
 }
 
 /**

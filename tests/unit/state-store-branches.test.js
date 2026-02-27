@@ -175,4 +175,18 @@ describe('StateStore branch coverage', () => {
         expect(switched).toBeGreaterThan(0);
         expect(switched).not.toBe(narrow);
     });
+
+    it('applies token-index search semantics for multi-token terms', () => {
+        const rows = [
+            { id: 1, name: 'alice paris', city: 'paris' },
+            { id: 2, name: 'alice', city: 'rome' },
+            { id: 3, name: 'cooper', city: 'paris' }
+        ];
+        const store = new StateStore({ rows, pageSize: 10, initialSort: null });
+        store.setSearchTerm('alice paris');
+
+        const view = store.getVisibleRows([{ key: 'name' }, { key: 'city' }]);
+        expect(view.rows).toHaveLength(1);
+        expect(view.rows[0].id).toBe(1);
+    });
 });

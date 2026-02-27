@@ -114,8 +114,6 @@ function startServer() {
  */
 function runIteration(page, size) {
     return page.evaluate((rowCount) => {
-        const startedAt = performance.now();
-
         const buildRows = (count) => {
             const cities = ['London', 'Paris', 'Berlin', 'Madrid', 'Rome', 'Lisbon'];
             return Array.from({ length: count }).map((_, index) => ({
@@ -143,6 +141,7 @@ function runIteration(page, size) {
         return import('/dist/vanilla-tables.js').then((lib) => {
             const root = ensureRoot();
             const rows = buildRows(rowCount);
+            const startedAt = performance.now();
             const table = lib.createVanillaTable(root, rows, {
                 pageSize: 50,
                 debounceMs: 0,
