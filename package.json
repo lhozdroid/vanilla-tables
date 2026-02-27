@@ -1,6 +1,6 @@
 {
     "name": "vanilla-tables",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Fast, framework-free data table plugin for vanilla JavaScript.",
     "homepage": "https://github.com/lhozdroid/vanilla-tables#readme",
     "repository": {
