@@ -75,14 +75,21 @@ var defaultOptions = {
     enabled: false,
     rowHeight: 40,
     overscan: 6,
-    height: 420
+    height: 420,
+    adaptiveOverscan: true
+  },
+  virtualColumns: {
+    enabled: false,
+    width: 180,
+    overscan: 2
   },
   parallel: {
     enabled: true,
     threshold: 2e4,
     workers: "auto",
     timeoutMs: 4e3,
-    retries: 1
+    retries: 1,
+    typedColumns: true
   },
   persistence: {
     enabled: false,
@@ -100,6 +107,7 @@ var defaultOptions = {
   },
   themeClasses: {},
   expandRow: null,
+  sanitizeHtml: null,
   i18n: defaultI18n,
   labels: {
     search: defaultI18n.search,
@@ -135,15 +143,16 @@ var ShellRenderer = class {
    * @returns {Record<string, HTMLElement>}
    */
   mount() {
+    const labels = this.options.labels || {};
     this.root.innerHTML = `
       <div class="${this.theme.classOf("shell", "vt-shell")}">
         <div class="${this.theme.classOf("controls", "vt-controls")}">
           <label class="${this.theme.classOf("sizeWrap", "vt-size-wrap")}">
-            <span>${this.options.labels.rows}</span>
+            <span>${escapeHtml(String(labels.rows ?? ""))}</span>
             <select class="${this.theme.classOf("sizeSelect", "vt-size")}"></select>
           </label>
           <label class="${this.theme.classOf("searchWrap", "vt-search-wrap")}">
-            <span>${this.options.labels.search}</span>
+            <span>${escapeHtml(String(labels.search ?? ""))}</span>
             <input class="${this.theme.classOf("searchInput", "vt-search")}" type="search" placeholder="Type to filter..." />
           </label>
         </div>
@@ -156,10 +165,10 @@ var ShellRenderer = class {
         <div class="${this.theme.classOf("footer", "vt-footer")} ${this.options.fixedFooter ? this.theme.classOf("fixedFooter", "vt-fixed-footer") : ""}">
           <span class="${this.theme.classOf("info", "vt-info")}"></span>
           <div class="${this.theme.classOf("paginationGroup", "vt-pagination-group")}">
-            <button class="${this.theme.classOf("firstButton", "vt-page-btn vt-first")}" type="button">${this.options.labels.first}</button>
-            <button class="${this.theme.classOf("prevButton", "vt-page-btn vt-prev")}" type="button">${this.options.labels.prev}</button>
-            <button class="${this.theme.classOf("nextButton", "vt-page-btn vt-next")}" type="button">${this.options.labels.next}</button>
-            <button class="${this.theme.classOf("lastButton", "vt-page-btn vt-last")}" type="button">${this.options.labels.last}</button>
+            <button class="${this.theme.classOf("firstButton", "vt-page-btn vt-first")}" type="button">${escapeHtml(String(labels.first ?? ""))}</button>
+            <button class="${this.theme.classOf("prevButton", "vt-page-btn vt-prev")}" type="button">${escapeHtml(String(labels.prev ?? ""))}</button>
+            <button class="${this.theme.classOf("nextButton", "vt-page-btn vt-next")}" type="button">${escapeHtml(String(labels.next ?? ""))}</button>
+            <button class="${this.theme.classOf("lastButton", "vt-page-btn vt-last")}" type="button">${escapeHtml(String(labels.last ?? ""))}</button>
           </div>
         </div>
       </div>
@@ -177,8 +186,9 @@ var ShellRenderer = class {
       next: this.root.querySelector(".vt-next"),
       last: this.root.querySelector(".vt-last")
     };
-    refs.pageSize.innerHTML = this.options.pageSizeOptions.map((size) => `<option value="${size}">${size}</option>`).join("");
-    refs.pageSize.value = String(this.options.pageSize);
+    const pageSizes = normalizePageSizeOptions(this.options.pageSizeOptions);
+    refs.pageSize.innerHTML = pageSizes.map((size) => `<option value="${size}">${size}</option>`).join("");
+    refs.pageSize.value = String(normalizePageSize(this.options.pageSize));
     if (!this.options.searchable) {
       refs.search.closest(".vt-search-wrap").style.display = "none";
     }
@@ -188,6 +198,19 @@ var ShellRenderer = class {
     return refs;
   }
 };
+function escapeHtml(value) {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+function normalizePageSize(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.floor(parsed));
+}
+function normalizePageSizeOptions(values) {
+  if (!Array.isArray(values) || !values.length) return [10, 25, 50, 100];
+  const normalized = values.map((value) => normalizePageSize(value));
+  return [...new Set(normalized)];
+}
 
 // src/core/renderers/header-renderer.js
 var HeaderRenderer = class {
@@ -209,25 +232,31 @@ var HeaderRenderer = class {
    * @param {Record<string, string>} columnFilters
    * @param {(cell: HTMLElement, visualIndex: number) => void} applyFixedColumn
    * @param {Record<string, number>} columnWidths
+   * @param {{ start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean }} columnWindow
    * @returns {void}
    */
-  render(thead, columns, sortState, columnFilters, applyFixedColumn, columnWidths) {
+  render(thead, columns, sortState, columnFilters, applyFixedColumn, columnWidths, columnWindow) {
     const headRows = [];
     const sortRow = document.createElement("tr");
     sortRow.setAttribute("role", "row");
+    const visibleColumns = columnWindow?.enabled ? columns.slice(columnWindow.start, columnWindow.end) : columns;
     if (this.options.expandableRows) {
       const expandHeader = document.createElement("th");
       expandHeader.className = this.theme.classOf("headerCell", "vt-header-cell");
       sortRow.appendChild(expandHeader);
     }
-    columns.forEach((column, index) => {
+    if (columnWindow?.enabled && columnWindow.leftWidth > 0) {
+      sortRow.appendChild(createSpacerHeader(columnWindow.leftWidth));
+    }
+    visibleColumns.forEach((column, index) => {
       const th = document.createElement("th");
       th.className = this.theme.classOf("headerCell", "vt-header-cell");
       th.dataset.key = column.key;
       th.draggable = Boolean(this.options.columnReorder);
       th.tabIndex = 0;
       th.setAttribute("role", "columnheader");
-      applyFixedColumn(th, index + (this.options.expandableRows ? 1 : 0));
+      const baseIndex = columnWindow?.enabled ? columnWindow.start + index : index;
+      applyFixedColumn(th, baseIndex + (this.options.expandableRows ? 1 : 0));
       if (columnWidths[column.key]) {
         th.style.width = `${columnWidths[column.key]}px`;
       }
@@ -240,10 +269,7 @@ var HeaderRenderer = class {
       const marker = sortMeta ? sortMeta.direction === "asc" ? ` \u25B2${sortState.length > 1 ? ` ${sortIndex + 1}` : ""}` : ` \u25BC${sortState.length > 1 ? ` ${sortIndex + 1}` : ""}` : "";
       button.textContent = `${column.label}${marker}`;
       button.disabled = column.sortable === false || !this.options.sortable;
-      th.setAttribute(
-        "aria-sort",
-        sortMeta ? sortMeta.direction === "asc" ? "ascending" : "descending" : "none"
-      );
+      th.setAttribute("aria-sort", sortMeta ? sortMeta.direction === "asc" ? "ascending" : "descending" : "none");
       th.appendChild(button);
       if (this.options.columnResize) {
         const resizeHandle = document.createElement("span");
@@ -256,6 +282,9 @@ var HeaderRenderer = class {
       }
       sortRow.appendChild(th);
     });
+    if (columnWindow?.enabled && columnWindow.rightWidth > 0) {
+      sortRow.appendChild(createSpacerHeader(columnWindow.rightWidth));
+    }
     if (this.options.rowActions.length) {
       const actionTh = document.createElement("th");
       actionTh.textContent = this.options.labels.actions;
@@ -272,10 +301,14 @@ var HeaderRenderer = class {
         expandFilterHeader.className = this.theme.classOf("filterHeaderCell", "vt-filter-header-cell");
         filterRow.appendChild(expandFilterHeader);
       }
-      columns.forEach((column, index) => {
+      if (columnWindow?.enabled && columnWindow.leftWidth > 0) {
+        filterRow.appendChild(createSpacerHeader(columnWindow.leftWidth));
+      }
+      visibleColumns.forEach((column, index) => {
         const th = document.createElement("th");
         th.className = this.theme.classOf("filterHeaderCell", "vt-filter-header-cell");
-        applyFixedColumn(th, index + (this.options.expandableRows ? 1 : 0));
+        const baseIndex = columnWindow?.enabled ? columnWindow.start + index : index;
+        applyFixedColumn(th, baseIndex + (this.options.expandableRows ? 1 : 0));
         if (column.filterable === false) {
           filterRow.appendChild(th);
           return;
@@ -288,6 +321,9 @@ var HeaderRenderer = class {
         th.appendChild(input);
         filterRow.appendChild(th);
       });
+      if (columnWindow?.enabled && columnWindow.rightWidth > 0) {
+        filterRow.appendChild(createSpacerHeader(columnWindow.rightWidth));
+      }
       if (this.options.rowActions.length) {
         filterRow.appendChild(document.createElement("th"));
       }
@@ -302,6 +338,15 @@ var HeaderRenderer = class {
     }
   }
 };
+function createSpacerHeader(width) {
+  const th = document.createElement("th");
+  th.className = "vt-col-spacer";
+  th.style.width = `${width}px`;
+  th.style.minWidth = `${width}px`;
+  th.style.padding = "0";
+  th.style.border = "none";
+  return th;
+}
 function appendClassNames(element, classNames) {
   classNames.split(/\s+/).filter(Boolean).forEach((name) => {
     element.classList.add(name);
@@ -319,6 +364,7 @@ var BodyRenderer = class {
     this.options = options;
     this.hooks = hooks;
     this.theme = theme;
+    this.rowNodeCache = /* @__PURE__ */ new Map();
   }
   /**
    * Renders visible table body content.
@@ -331,17 +377,21 @@ var BodyRenderer = class {
    * @returns {void}
    */
   render(tbody, columns, rows, meta, applyFixedColumn) {
-    tbody.innerHTML = "";
+    const columnWindow = meta.columnWindow || { enabled: false, start: 0, end: columns.length, leftWidth: 0, rightWidth: 0, totalColumns: columns.length };
+    const visibleColumns = columnWindow.enabled ? columns.slice(columnWindow.start, columnWindow.end) : columns;
+    const fragment = document.createDocumentFragment();
+    const postRenderRows = [];
     if (!rows.length) {
       const tr = document.createElement("tr");
       tr.setAttribute("role", "row");
       const td = document.createElement("td");
       td.setAttribute("role", "gridcell");
-      td.colSpan = columns.length + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
+      td.colSpan = visibleColumns.length + (columnWindow.enabled ? 2 : 0) + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
       td.className = this.theme.classOf("emptyCell", "vt-empty");
       td.textContent = this.options.labels.empty;
       tr.appendChild(td);
-      tbody.appendChild(tr);
+      fragment.appendChild(tr);
+      tbody.replaceChildren(fragment);
       return;
     }
     const renderSlice = meta.virtualization.enabled ? rows.slice(meta.virtualization.start, meta.virtualization.end) : rows;
@@ -349,20 +399,21 @@ var BodyRenderer = class {
       const topSpacer = document.createElement("tr");
       topSpacer.className = "vt-virtual-top";
       const topCell = document.createElement("td");
-      topCell.colSpan = columns.length + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
+      topCell.colSpan = visibleColumns.length + (columnWindow.enabled ? 2 : 0) + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
       topCell.style.height = `${meta.virtualization.start * meta.virtualization.rowHeight}px`;
       topCell.style.padding = "0";
       topCell.style.border = "none";
       topSpacer.appendChild(topCell);
-      tbody.appendChild(topSpacer);
+      fragment.appendChild(topSpacer);
     }
     renderSlice.forEach((row, localIndex) => {
       const index = meta.virtualization.enabled ? meta.virtualization.start + localIndex : localIndex;
       const rowId = meta.getRowId(row, index);
-      const tr = document.createElement("tr");
+      const tr = this.rowNodeCache.get(rowId) || document.createElement("tr");
       tr.className = this.theme.classOf("bodyRow", "vt-row");
       tr.dataset.rowId = rowId;
       tr.setAttribute("role", "row");
+      tr.replaceChildren();
       if (this.options.fixedTopRows && index < this.options.fixedTopRows) {
         appendClassNames2(tr, this.theme.classOf("fixedTopRow", "vt-fixed-top-row"));
       }
@@ -379,24 +430,35 @@ var BodyRenderer = class {
         expandTd.appendChild(expandButton);
         tr.appendChild(expandTd);
       }
-      columns.forEach((column, columnIndex) => {
+      if (columnWindow.enabled && columnWindow.leftWidth > 0) {
+        tr.appendChild(createSpacerCell(columnWindow.leftWidth));
+      }
+      visibleColumns.forEach((column, columnIndex) => {
         const td = document.createElement("td");
         td.className = this.theme.classOf("bodyCell", "vt-cell");
         td.setAttribute("role", "gridcell");
         td.dataset.key = column.key;
         td.dataset.rowId = rowId;
-        applyFixedColumn(td, columnIndex + (this.options.expandableRows ? 1 : 0));
+        const baseIndex = columnWindow.enabled ? columnWindow.start + columnIndex : columnIndex;
+        applyFixedColumn(td, baseIndex + (this.options.expandableRows ? 1 : 0));
         if (meta.columnWidths[column.key]) {
           td.style.width = `${meta.columnWidths[column.key]}px`;
         }
         const raw = row[column.key];
-        td.innerHTML = column.render ? column.render(raw, row) : escapeHtml(String(raw ?? ""));
+        if (column.render) {
+          setCellContent(td, column.render(raw, row), this.options.sanitizeHtml);
+        } else {
+          td.textContent = String(raw ?? "");
+        }
         const isEditable = meta.editableRows && column.editable !== false && meta.editableColumns[column.key] !== false;
         if (isEditable) {
           appendClassNames2(td, this.theme.classOf("editableCell", "vt-cell-editable"));
         }
         tr.appendChild(td);
       });
+      if (columnWindow.enabled && columnWindow.rightWidth > 0) {
+        tr.appendChild(createSpacerCell(columnWindow.rightWidth));
+      }
       if (this.options.rowActions.length) {
         const actionTd = document.createElement("td");
         actionTd.className = this.theme.classOf("actionsCell", "vt-actions-cell");
@@ -412,39 +474,77 @@ var BodyRenderer = class {
         });
         tr.appendChild(actionTd);
       }
-      tbody.appendChild(tr);
-      this.hooks.afterRowRender?.({ row, element: tr });
+      fragment.appendChild(tr);
+      this.rowNodeCache.set(rowId, tr);
+      postRenderRows.push({ row, element: tr });
       if (this.options.expandableRows && meta.expandedRowIds.has(rowId) && meta.expandRow) {
         const expanded = document.createElement("tr");
         expanded.className = this.theme.classOf("expandRow", "vt-expand-row");
         const expandedCell = document.createElement("td");
-        expandedCell.colSpan = columns.length + 1 + (this.options.rowActions.length ? 1 : 0);
+        expandedCell.colSpan = visibleColumns.length + (columnWindow.enabled ? 2 : 0) + 1 + (this.options.rowActions.length ? 1 : 0);
         expandedCell.className = this.theme.classOf("expandContent", "vt-expand-content");
-        expandedCell.innerHTML = meta.expandRow(row);
+        setCellContent(expandedCell, meta.expandRow(row), this.options.sanitizeHtml);
         expanded.appendChild(expandedCell);
-        tbody.appendChild(expanded);
+        fragment.appendChild(expanded);
       }
     });
     if (meta.virtualization.enabled && meta.virtualization.end < rows.length) {
       const bottomSpacer = document.createElement("tr");
       bottomSpacer.className = "vt-virtual-bottom";
       const bottomCell = document.createElement("td");
-      bottomCell.colSpan = columns.length + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
+      bottomCell.colSpan = visibleColumns.length + (columnWindow.enabled ? 2 : 0) + (this.options.expandableRows ? 1 : 0) + (this.options.rowActions.length ? 1 : 0);
       bottomCell.style.height = `${(rows.length - meta.virtualization.end) * meta.virtualization.rowHeight}px`;
       bottomCell.style.padding = "0";
       bottomCell.style.border = "none";
       bottomSpacer.appendChild(bottomCell);
-      tbody.appendChild(bottomSpacer);
+      fragment.appendChild(bottomSpacer);
     }
+    tbody.replaceChildren(fragment);
+    postRenderRows.forEach(({ row, element }) => {
+      this.hooks.afterRowRender?.({ row, element });
+    });
+    this.trimRowCache();
+  }
+  /**
+   * Clears stale cached row elements to bound memory growth.
+   *
+   * @returns {void}
+   */
+  trimRowCache() {
+    if (this.rowNodeCache.size <= 2e3) return;
+    const keep = /* @__PURE__ */ new Map();
+    for (const [key, value] of this.rowNodeCache.entries()) {
+      if (keep.size >= 1e3) break;
+      keep.set(key, value);
+    }
+    this.rowNodeCache = keep;
   }
 };
-function escapeHtml(value) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+function setCellContent(cell, content, sanitizer) {
+  if (content instanceof Node) {
+    cell.replaceChildren(content);
+    return;
+  }
+  const html = String(content ?? "");
+  if (typeof sanitizer === "function") {
+    cell.innerHTML = sanitizer(html);
+    return;
+  }
+  cell.innerHTML = html;
 }
 function appendClassNames2(element, classNames) {
   classNames.split(/\s+/).filter(Boolean).forEach((name) => {
     element.classList.add(name);
   });
+}
+function createSpacerCell(width) {
+  const td = document.createElement("td");
+  td.className = "vt-col-spacer";
+  td.style.width = `${width}px`;
+  td.style.minWidth = `${width}px`;
+  td.style.padding = "0";
+  td.style.border = "none";
+  return td;
 }
 
 // src/core/renderers/footer-renderer.js
@@ -552,16 +652,18 @@ var Renderer = class {
    * @param {{ key: string, direction: 'asc'|'desc' }[]} sortState
    * @param {Record<string, string>} columnFilters
    * @param {Record<string, number>} columnWidths
+   * @param {{ start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean }} columnWindow
    * @returns {void}
    */
-  renderHeader(columns, sortState, columnFilters, columnWidths) {
+  renderHeader(columns, sortState, columnFilters, columnWidths, columnWindow) {
     this.headerRenderer.render(
       this.refs.thead,
       columns,
       sortState,
       columnFilters,
       (cell, visualIndex) => this.applyFixedColumn(cell, visualIndex, columns, columnWidths),
-      columnWidths
+      columnWidths,
+      columnWindow
     );
   }
   /**
@@ -569,17 +671,11 @@ var Renderer = class {
    *
    * @param {{ key: string, render?: (value: any, row: Record<string, any>) => string, editable?: boolean }[]} columns
    * @param {Record<string, any>[]} rows
-   * @param {{ expandedRowIds: Set<string>, getRowId: (row: Record<string, any>, index: number) => string, expandRow: ((row: Record<string, any>) => string) | null, editableRows: boolean, editableColumns: Record<string, boolean>, columnWidths: Record<string, number>, virtualization: { enabled: boolean, start: number, end: number, rowHeight: number } }} meta
+   * @param {{ expandedRowIds: Set<string>, getRowId: (row: Record<string, any>, index: number) => string, expandRow: ((row: Record<string, any>) => string) | null, editableRows: boolean, editableColumns: Record<string, boolean>, columnWidths: Record<string, number>, virtualization: { enabled: boolean, start: number, end: number, rowHeight: number }, columnWindow: { start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean } }} meta
    * @returns {void}
    */
   renderBody(columns, rows, meta) {
-    this.bodyRenderer.render(
-      this.refs.tbody,
-      columns,
-      rows,
-      meta,
-      (cell, visualIndex) => this.applyFixedColumn(cell, visualIndex, columns, meta.columnWidths)
-    );
+    this.bodyRenderer.render(this.refs.tbody, columns, rows, meta, (cell, visualIndex) => this.applyFixedColumn(cell, visualIndex, columns, meta.columnWidths));
   }
   /**
    * Renders footer content.
@@ -819,6 +915,34 @@ function getWorkerUrl() {
 
     let rows = [];
     let offset = 0;
+    let textColumns = new Map();
+    let numericColumns = new Map();
+
+    const getTextColumn = (key) => {
+      if (textColumns.has(key)) return textColumns.get(key);
+      const values = new Array(rows.length);
+      for (let i = 0; i < rows.length; i += 1) {
+        values[i] = toText(rows[i] && rows[i][key]);
+      }
+      textColumns.set(key, values);
+      return values;
+    };
+
+    const getNumericColumn = (key) => {
+      if (numericColumns.has(key)) return numericColumns.get(key);
+      const values = new Float64Array(rows.length);
+      const flags = new Uint8Array(rows.length);
+      for (let i = 0; i < rows.length; i += 1) {
+        const parsed = Number(rows[i] && rows[i][key]);
+        if (Number.isFinite(parsed)) {
+          values[i] = parsed;
+          flags[i] = 1;
+        }
+      }
+      const output = { values, flags };
+      numericColumns.set(key, output);
+      return output;
+    };
 
     self.onmessage = (event) => {
       const data = event.data || {};
@@ -827,6 +951,8 @@ function getWorkerUrl() {
         if (data.type === 'setRows') {
           rows = Array.isArray(data.rows) ? data.rows : [];
           offset = Number(data.offset || 0);
+          textColumns = new Map();
+          numericColumns = new Map();
           self.postMessage({ id: data.id, result: true });
           return;
         }
@@ -840,13 +966,26 @@ function getWorkerUrl() {
             : {};
           const filterEntries = Object.entries(filters);
           const output = [];
+          const textByKey = new Map();
+          const numericByKey = new Map();
+          const getText = (key) => {
+            if (textByKey.has(key)) return textByKey.get(key);
+            const values = getTextColumn(key);
+            textByKey.set(key, values);
+            return values;
+          };
+          const getNumeric = (key) => {
+            if (numericByKey.has(key)) return numericByKey.get(key);
+            const values = getNumericColumn(key);
+            numericByKey.set(key, values);
+            return values;
+          };
 
           for (let i = 0; i < rows.length; i += 1) {
-            const row = rows[i];
             let matchesFilters = true;
 
             for (const [key, term] of filterEntries) {
-              if (!toText(row && row[key]).includes(toText(term))) {
+              if (!getText(key)[i].includes(toText(term))) {
                 matchesFilters = false;
                 break;
               }
@@ -860,7 +999,7 @@ function getWorkerUrl() {
 
             let matchesSearch = false;
             for (const key of keys) {
-              if (toText(row && row[key]).includes(searchTerm)) {
+              if (getText(key)[i].includes(searchTerm)) {
                 matchesSearch = true;
                 break;
               }
@@ -870,22 +1009,18 @@ function getWorkerUrl() {
 
           if (sorts.length > 0) {
             output.sort((leftIndex, rightIndex) => {
-              const leftRow = rows[leftIndex - offset];
-              const rightRow = rows[rightIndex - offset];
+              const leftRowIndex = leftIndex - offset;
+              const rightRowIndex = rightIndex - offset;
               for (const sort of sorts) {
-                const leftRaw = leftRow ? leftRow[sort.key] : null;
-                const rightRaw = rightRow ? rightRow[sort.key] : null;
-                const leftNum = Number(leftRaw);
-                const rightNum = Number(rightRaw);
-                const leftFinite = Number.isFinite(leftNum);
-                const rightFinite = Number.isFinite(rightNum);
-
+                const numeric = getNumeric(sort.key);
+                const text = getText(sort.key);
                 let cmp = 0;
-                if (leftFinite && rightFinite) {
-                  cmp = leftNum - rightNum;
+                const bothNumeric = numeric.flags[leftRowIndex] && numeric.flags[rightRowIndex];
+                if (bothNumeric) {
+                  cmp = numeric.values[leftRowIndex] - numeric.values[rightRowIndex];
                 } else {
-                  const leftText = toText(leftRaw);
-                  const rightText = toText(rightRaw);
+                  const leftText = text[leftRowIndex];
+                  const rightText = text[rightRowIndex];
                   if (leftText < rightText) cmp = -1;
                   else if (leftText > rightText) cmp = 1;
                 }
@@ -944,7 +1079,7 @@ var StateStore = class {
     this.rows = rows;
     this.state = {
       page: 1,
-      pageSize,
+      pageSize: normalizePageSize2(pageSize),
       searchTerm: "",
       columnFilters: {},
       sorts: initialSort ? [{ key: initialSort.key, direction: initialSort.direction || "asc" }] : [],
@@ -955,6 +1090,7 @@ var StateStore = class {
     this.rowsVersion = 0;
     this.revision = 0;
     this.filterCache = null;
+    this.sortComparatorCache = null;
     this.projectionCache = null;
     this.columnIndexCache = null;
     const parallelWorkers = resolveParallelWorkers(parallel?.workers);
@@ -1038,7 +1174,7 @@ var StateStore = class {
    * @returns {void}
    */
   setPage(page) {
-    this.state.page = Math.max(1, page);
+    this.state.page = normalizePage(page);
   }
   /**
    * Sets the page size and resets pagination.
@@ -1047,7 +1183,7 @@ var StateStore = class {
    * @returns {void}
    */
   setPageSize(pageSize) {
-    this.state.pageSize = pageSize;
+    this.state.pageSize = normalizePageSize2(pageSize);
     this.state.page = 1;
   }
   /**
@@ -1146,15 +1282,22 @@ var StateStore = class {
     if (!payload) return;
     let affectsProjection = false;
     let affectsFilters = false;
-    if (typeof payload.page === "number") this.state.page = Math.max(1, payload.page);
-    if (typeof payload.pageSize === "number") this.state.pageSize = payload.pageSize;
+    if (typeof payload.page === "number") this.state.page = normalizePage(payload.page);
+    if (typeof payload.pageSize === "number") this.state.pageSize = normalizePageSize2(payload.pageSize);
     if (typeof payload.searchTerm === "string") {
-      this.state.searchTerm = payload.searchTerm;
+      this.state.searchTerm = payload.searchTerm.toLowerCase().trim();
       affectsProjection = true;
       affectsFilters = true;
     }
     if (payload.columnFilters && typeof payload.columnFilters === "object") {
-      this.state.columnFilters = { ...payload.columnFilters };
+      const nextFilters = {};
+      for (const [key, value] of Object.entries(payload.columnFilters)) {
+        const normalized = String(value ?? "").toLowerCase().trim();
+        if (normalized) {
+          nextFilters[key] = normalized;
+        }
+      }
+      this.state.columnFilters = nextFilters;
       affectsProjection = true;
       affectsFilters = true;
     }
@@ -1363,6 +1506,7 @@ var StateStore = class {
   invalidateProjection() {
     this.revision += 1;
     this.projectionCache = null;
+    this.sortComparatorCache = null;
   }
   /**
    * Invalidates cached filtered and projected rows.
@@ -1518,7 +1662,8 @@ var StateStore = class {
     if (this.filterCache && this.filterCache.rowsVersion === this.rowsVersion && this.filterCache.columnsKey === columnsKey && this.filterCache.searchTerm === searchTerm && this.filterCache.filtersKey === filtersKey) {
       return this.filterCache.rows;
     }
-    const rows = this.applyFiltersAndSearch(this.rows, columns);
+    const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+    const rows = this.applyFiltersAndSearch(baseRows, columns);
     this.filterCache = {
       rowsVersion: this.rowsVersion,
       columnsKey,
@@ -1542,7 +1687,8 @@ var StateStore = class {
       return Promise.resolve(this.filterCache.rows);
     }
     if (!this.canUseWorkerProjection()) {
-      const rows = this.applyFiltersAndSearch(this.rows, columns);
+      const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+      const rows = this.applyFiltersAndSearch(baseRows, columns);
       this.filterCache = {
         rowsVersion: this.rowsVersion,
         columnsKey,
@@ -1572,7 +1718,8 @@ var StateStore = class {
     }).catch(() => {
       this.projectionWorkerPool?.destroy();
       this.projectionWorkerPool = null;
-      const rows = this.applyFiltersAndSearch(this.rows, columns);
+      const baseRows = this.resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey);
+      const rows = this.applyFiltersAndSearch(baseRows, columns);
       this.filterCache = {
         rowsVersion: this.rowsVersion,
         columnsKey,
@@ -1666,76 +1813,8 @@ var StateStore = class {
     const sorts = this.state.sorts.filter((item) => columnSet.has(item.key));
     if (!sorts.length) return rows;
     const rowCount = rows.length;
-    const order = Array.from({ length: rowCount }).map((_, index2) => index2);
-    const index = this.getColumnIndex(columns);
-    const sourceIndexes = new Int32Array(rowCount);
-    let allIndexed = true;
-    for (let i = 0; i < rowCount; i += 1) {
-      const sourceIndex = index.rowIndex.get(rows[i]);
-      if (sourceIndex === void 0) {
-        allIndexed = false;
-        break;
-      }
-      sourceIndexes[i] = sourceIndex;
-    }
-    const descriptors = sorts.map((sort) => {
-      const text = new Array(rowCount);
-      const num = new Float64Array(rowCount);
-      const isNum = new Uint8Array(rowCount);
-      const indexedText = allIndexed ? this.getIndexedText(index, sort.key) : null;
-      const indexedNumeric = allIndexed ? this.getIndexedNumeric(index, sort.key) : null;
-      for (let i = 0; i < rowCount; i += 1) {
-        if (indexedText && indexedNumeric) {
-          const sourceIndex = sourceIndexes[i];
-          text[i] = indexedText[sourceIndex];
-          isNum[i] = indexedNumeric.flags[sourceIndex];
-          num[i] = indexedNumeric.values[sourceIndex];
-          continue;
-        }
-        const raw = rows[i]?.[sort.key];
-        const parsed = Number(raw);
-        text[i] = String(raw ?? "").toLowerCase();
-        if (Number.isFinite(parsed)) {
-          isNum[i] = 1;
-          num[i] = parsed;
-        }
-      }
-      return {
-        direction: sort.direction,
-        multiplier: sort.direction === "desc" ? -1 : 1,
-        text,
-        num,
-        isNum
-      };
-    });
-    const comparator = descriptors.length === 1 ? (leftIndex, rightIndex) => {
-      const descriptor = descriptors[0];
-      const bothNumeric = descriptor.isNum[leftIndex] && descriptor.isNum[rightIndex];
-      if (bothNumeric) {
-        const diff = descriptor.num[leftIndex] - descriptor.num[rightIndex];
-        if (diff !== 0) return diff * descriptor.multiplier;
-      } else {
-        const leftText = descriptor.text[leftIndex];
-        const rightText = descriptor.text[rightIndex];
-        if (leftText < rightText) return -1 * descriptor.multiplier;
-        if (leftText > rightText) return 1 * descriptor.multiplier;
-      }
-      return leftIndex - rightIndex;
-    } : (leftIndex, rightIndex) => {
-      for (const descriptor of descriptors) {
-        const bothNumeric = descriptor.isNum[leftIndex] && descriptor.isNum[rightIndex];
-        if (bothNumeric) {
-          const diff = descriptor.num[leftIndex] - descriptor.num[rightIndex];
-          if (diff !== 0) return diff * descriptor.multiplier;
-          continue;
-        }
-        const leftText = descriptor.text[leftIndex];
-        const rightText = descriptor.text[rightIndex];
-        if (leftText < rightText) return -1 * descriptor.multiplier;
-        if (leftText > rightText) return 1 * descriptor.multiplier;
-      }
-      return leftIndex - rightIndex;
-    };
+    const order = Array.from({ length: rowCount }).map((_, index) => index);
+    const comparator = this.getCompiledSortComparator(columns, sorts, rows);
     if (rowCount < 5e3) {
       mergeSort(order, comparator);
     } else {
@@ -1746,6 +1825,91 @@ var StateStore = class {
       output[i] = rows[order[i]];
     }
     return output;
+  }
+  /**
+   * Returns a narrowed base row set for incremental query updates when possible.
+   *
+   * @param {string} columnsKey
+   * @param {string} searchTerm
+   * @param {string} filtersKey
+   * @returns {Record<string, any>[]}
+   */
+  resolveIncrementalBaseRows(columnsKey, searchTerm, filtersKey) {
+    if (!this.filterCache) return this.rows;
+    if (this.filterCache.rowsVersion !== this.rowsVersion) return this.rows;
+    if (this.filterCache.columnsKey !== columnsKey) return this.rows;
+    if (!isIncrementalRefinement(this.filterCache.searchTerm, searchTerm)) return this.rows;
+    if (!isIncrementalFilterRefinement(this.filterCache.filtersKey, filtersKey)) return this.rows;
+    return this.filterCache.rows;
+  }
+  /**
+   * Returns a compiled row-index comparator for the current sort state.
+   *
+   * @param {{ key: string }[]} columns
+   * @param {{ key: string, direction: 'asc'|'desc' }[]} sorts
+   * @param {Record<string, any>[]} rows
+   * @returns {(left: number, right: number) => number}
+   */
+  getCompiledSortComparator(columns, sorts, rows) {
+    const columnsKey = this.getColumnsKey(columns);
+    const sortsKey = serializeSorts(sorts);
+    const index = this.getColumnIndex(columns);
+    if (this.sortComparatorCache && this.sortComparatorCache.rowsVersion === this.rowsVersion && this.sortComparatorCache.columnsKey === columnsKey && this.sortComparatorCache.sortsKey === sortsKey) {
+      return this.buildLocalComparator(this.sortComparatorCache.comparator, rows, index.rowIndex);
+    }
+    const sourceText = /* @__PURE__ */ new Map();
+    const sourceNumeric = /* @__PURE__ */ new Map();
+    for (const sort of sorts) {
+      sourceText.set(sort.key, this.getIndexedText(index, sort.key));
+      sourceNumeric.set(sort.key, this.getIndexedNumeric(index, sort.key));
+    }
+    const comparator = (leftSourceIndex, rightSourceIndex) => {
+      for (const sort of sorts) {
+        const numeric = sourceNumeric.get(sort.key);
+        const text = sourceText.get(sort.key);
+        const bothNumeric = numeric.flags[leftSourceIndex] && numeric.flags[rightSourceIndex];
+        let cmp = 0;
+        if (bothNumeric) {
+          cmp = numeric.values[leftSourceIndex] - numeric.values[rightSourceIndex];
+        } else {
+          const leftText = text[leftSourceIndex];
+          const rightText = text[rightSourceIndex];
+          if (leftText < rightText) cmp = -1;
+          else if (leftText > rightText) cmp = 1;
+        }
+        if (cmp !== 0) return sort.direction === "desc" ? -cmp : cmp;
+      }
+      return leftSourceIndex - rightSourceIndex;
+    };
+    this.sortComparatorCache = {
+      rowsVersion: this.rowsVersion,
+      columnsKey,
+      sortsKey,
+      comparator,
+      sourceText,
+      sourceNumeric
+    };
+    return this.buildLocalComparator(comparator, rows, index.rowIndex);
+  }
+  /**
+   * Maps source-index comparator to local row-order comparator.
+   *
+   * @param {(leftSourceIndex: number, rightSourceIndex: number) => number} sourceComparator
+   * @param {Record<string, any>[]} rows
+   * @param {WeakMap<Record<string, any>, number>} rowIndex
+   * @returns {(left: number, right: number) => number}
+   */
+  buildLocalComparator(sourceComparator, rows, rowIndex) {
+    return (leftIndex, rightIndex) => {
+      const leftSource = rowIndex.get(rows[leftIndex]);
+      const rightSource = rowIndex.get(rows[rightIndex]);
+      if (leftSource === void 0 || rightSource === void 0) {
+        return leftIndex - rightIndex;
+      }
+      const cmp = sourceComparator(leftSource, rightSource);
+      if (cmp !== 0) return cmp;
+      return leftIndex - rightIndex;
+    };
   }
   /**
    * Returns canonical key string for a column set.
@@ -1869,11 +2033,45 @@ var StateStore = class {
     return hasAlpha;
   }
 };
+function normalizePage(page) {
+  if (!Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+function normalizePageSize2(pageSize) {
+  if (!Number.isFinite(pageSize)) return 1;
+  return Math.max(1, Math.floor(pageSize));
+}
 var HAS_ALPHA_RE = /[a-z]/;
 function compareText(left, right) {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
+}
+function isIncrementalRefinement(previous, next) {
+  return next.startsWith(previous);
+}
+function isIncrementalFilterRefinement(previous, next) {
+  if (!previous) return true;
+  if (!next) return false;
+  const previousEntries = previous.split("|").filter(Boolean);
+  const nextEntries = new Map(next.split("|").filter(Boolean).map((entry) => {
+    const separator = entry.indexOf(":");
+    const key = separator >= 0 ? entry.slice(0, separator) : entry;
+    const value = separator >= 0 ? entry.slice(separator + 1) : "";
+    return [key, value];
+  }));
+  for (const entry of previousEntries) {
+    const separator = entry.indexOf(":");
+    const key = separator >= 0 ? entry.slice(0, separator) : entry;
+    const value = separator >= 0 ? entry.slice(separator + 1) : "";
+    const nextValue = nextEntries.get(key);
+    if (typeof nextValue !== "string") return false;
+    if (!nextValue.startsWith(value)) return false;
+  }
+  return true;
+}
+function serializeSorts(sorts) {
+  return sorts.map((sort) => `${sort.key}:${sort.direction}`).join("|");
 }
 function mergeSort(items, compare) {
   const size = items.length;
@@ -2040,9 +2238,7 @@ var ServerDataSource = class {
    */
   getView() {
     if (typeof this.fetchData !== "function") {
-      return Promise.reject(
-        new Error("VanillaTable serverSide mode requires options.fetchData(query).")
-      );
+      return Promise.reject(new Error("VanillaTable serverSide mode requires options.fetchData(query)."));
     }
     this.onLoadingChange(true);
     const query = this.store.getQuery();
@@ -2255,6 +2451,19 @@ var VanillaTable = class {
       end: this.options.pageSize,
       rowHeight: this.options.virtualScroll.rowHeight
     };
+    this.columnVirtualization = {
+      enabled: Boolean(this.options.virtualColumns?.enabled),
+      start: 0,
+      end: this.options.columns.length,
+      leftWidth: 0,
+      rightWidth: 0,
+      totalColumns: this.options.columns.length
+    };
+    this.scrollProfile = {
+      lastTop: 0,
+      lastAt: 0,
+      dynamicOverscan: this.options.virtualScroll.overscan
+    };
     this.applySyncedState();
   }
   /**
@@ -2288,12 +2497,8 @@ var VanillaTable = class {
       }
       this.lastView = view;
       this.virtualization = this.computeVirtualWindow(view.rows.length);
-      this.renderer.renderHeader(
-        columns,
-        this.store.state.sorts,
-        this.store.state.columnFilters,
-        this.store.state.columnWidths
-      );
+      this.columnVirtualization = this.computeColumnWindow(columns);
+      this.renderer.renderHeader(columns, this.store.state.sorts, this.store.state.columnFilters, this.store.state.columnWidths, this.columnVirtualization);
       this.renderer.renderBody(columns, view.rows, {
         expandedRowIds: this.expandedRowIds,
         getRowId: (row, index) => this.getRowId(row, index),
@@ -2301,7 +2506,8 @@ var VanillaTable = class {
         editableRows: this.options.editableRows,
         editableColumns: this.options.editableColumns,
         columnWidths: this.store.state.columnWidths,
-        virtualization: this.virtualization
+        virtualization: this.virtualization,
+        columnWindow: this.columnVirtualization
       });
       this.renderer.renderFooter({
         page: this.store.state.page,
@@ -2362,7 +2568,7 @@ var VanillaTable = class {
       const applySearch = () => {
         this.store.setSearchTerm(event.target.value);
         this.emitEvent("search:change", { term: this.store.state.searchTerm });
-        void this.refresh();
+        this.scheduleRefresh(false);
       };
       if (this.options.debounceMs <= 0) {
         applySearch();
@@ -2380,11 +2586,7 @@ var VanillaTable = class {
     this.renderer.refs.thead?.addEventListener("click", (event) => {
       const button = event.target.closest(".vt-sort-trigger");
       if (!button || button.disabled) return;
-      this.store.toggleSort(
-        button.dataset.key,
-        this.options.multiSort && event.shiftKey,
-        this.options.maxSorts
-      );
+      this.store.toggleSort(button.dataset.key, this.options.multiSort && event.shiftKey, this.options.maxSorts);
       this.emitEvent("sort:change", { sorts: [...this.store.state.sorts] });
       void this.refresh();
     });
@@ -2403,7 +2605,7 @@ var VanillaTable = class {
         key: input.dataset.key,
         value: this.store.state.columnFilters[input.dataset.key] || ""
       });
-      void this.refresh();
+      this.scheduleRefresh(false);
     });
   }
   /**
@@ -2579,14 +2781,40 @@ var VanillaTable = class {
    * @returns {void}
    */
   bindVirtualScrollEvents() {
-    if (!this.options.virtualScroll.enabled) return;
+    if (!this.options.virtualScroll.enabled && !this.options.virtualColumns?.enabled) return;
     this.renderer.refs.tableWrap?.addEventListener("scroll", () => {
+      const wrap = this.renderer.refs.tableWrap;
+      if (this.options.virtualScroll.adaptiveOverscan && wrap) {
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+        const deltaTop = Math.abs(wrap.scrollTop - this.scrollProfile.lastTop);
+        const deltaTime = Math.max(1, now - this.scrollProfile.lastAt);
+        const velocity = deltaTop / deltaTime;
+        const boost = Math.min(20, Math.floor(velocity * 16));
+        this.scrollProfile.dynamicOverscan = Math.max(this.options.virtualScroll.overscan, this.options.virtualScroll.overscan + boost);
+        this.scrollProfile.lastTop = wrap.scrollTop;
+        this.scrollProfile.lastAt = now;
+      }
       if (this.lastAnimationFrame) {
         cancelAnimationFrame(this.lastAnimationFrame);
       }
       this.lastAnimationFrame = requestAnimationFrame(() => {
-        void this.refresh();
+        this.scheduleRefresh(true);
       });
+    });
+  }
+  /**
+   * Schedules one refresh using animation or idle callbacks.
+   *
+   * @param {boolean} urgent
+   * @returns {void}
+   */
+  scheduleRefresh(urgent) {
+    if (urgent || typeof requestIdleCallback !== "function") {
+      void this.refresh();
+      return;
+    }
+    requestIdleCallback(() => {
+      void this.refresh();
     });
   }
   /**
@@ -2653,9 +2881,7 @@ var VanillaTable = class {
    * @returns {Promise<void>}
    */
   removeRowById(rowId) {
-    this.store.setRows(
-      this.store.rows.filter((row, index) => this.getRowId(row, index) !== String(rowId))
-    );
+    this.store.setRows(this.store.rows.filter((row, index) => this.getRowId(row, index) !== String(rowId)));
     this.emitEvent("data:remove", { rowId });
     return this.refresh();
   }
@@ -2823,9 +3049,7 @@ var VanillaTable = class {
    * @returns {Promise<void>}
    */
   setColumnEditable(key, editable) {
-    this.options.columns = this.options.columns.map(
-      (column) => column.key === key ? { ...column, editable } : column
-    );
+    this.options.columns = this.options.columns.map((column) => column.key === key ? { ...column, editable } : column);
     this.options.editableColumns[key] = editable;
     this.emitEvent("column:editable", { key, editable });
     return this.refresh();
@@ -3050,7 +3274,7 @@ var VanillaTable = class {
     }
     const wrap = this.renderer.refs.tableWrap;
     const rowHeight = this.options.virtualScroll.rowHeight;
-    const overscan = this.options.virtualScroll.overscan;
+    const overscan = this.options.virtualScroll.adaptiveOverscan ? this.scrollProfile.dynamicOverscan : this.options.virtualScroll.overscan;
     const visibleCount = Math.ceil((wrap.clientHeight || this.options.virtualScroll.height) / rowHeight);
     const start = Math.max(0, Math.floor(wrap.scrollTop / rowHeight) - overscan);
     const end = Math.min(totalRows, start + visibleCount + overscan * 2);
@@ -3059,6 +3283,54 @@ var VanillaTable = class {
       start,
       end,
       rowHeight
+    };
+  }
+  /**
+   * Computes virtual column window.
+   *
+   * @param {{ key: string }[]} columns
+   * @returns {{ enabled: boolean, start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number }}
+   */
+  computeColumnWindow(columns) {
+    if (!this.options.virtualColumns?.enabled || !this.renderer.refs.tableWrap) {
+      return {
+        enabled: false,
+        start: 0,
+        end: columns.length,
+        leftWidth: 0,
+        rightWidth: 0,
+        totalColumns: columns.length
+      };
+    }
+    const wrap = this.renderer.refs.tableWrap;
+    const defaultWidth = Math.max(40, Number(this.options.virtualColumns.width || 180));
+    const overscan = Math.max(0, Number(this.options.virtualColumns.overscan || 0));
+    const widths = columns.map((column) => this.store.state.columnWidths[column.key] || defaultWidth);
+    const targetStart = wrap.scrollLeft;
+    const targetEnd = wrap.scrollLeft + wrap.clientWidth;
+    let acc = 0;
+    let firstVisible = 0;
+    while (firstVisible < widths.length && acc + widths[firstVisible] < targetStart) {
+      acc += widths[firstVisible];
+      firstVisible += 1;
+    }
+    let accEnd = acc;
+    let lastVisible = firstVisible;
+    while (lastVisible < widths.length && accEnd < targetEnd) {
+      accEnd += widths[lastVisible];
+      lastVisible += 1;
+    }
+    const start = Math.max(0, firstVisible - overscan);
+    const end = Math.min(widths.length, lastVisible + overscan);
+    const leftWidth = widths.slice(0, start).reduce((sum, value) => sum + value, 0);
+    const rightWidth = widths.slice(end).reduce((sum, value) => sum + value, 0);
+    return {
+      enabled: true,
+      start,
+      end,
+      leftWidth,
+      rightWidth,
+      totalColumns: columns.length
     };
   }
   /**
@@ -3255,9 +3527,7 @@ function actionsDropdownPlugin(options = {}) {
         const row = table.findRowById(rowId);
         const action = table.options.rowActions.find((item) => item.id === id);
         if (action && row) {
-          Promise.resolve(
-            action.onClick ? action.onClick({ row, rowId, actionId: id, table, event: new Event("change") }) : null
-          ).finally(() => {
+          Promise.resolve(action.onClick ? action.onClick({ row, rowId, actionId: id, table, event: new Event("change") }) : null).finally(() => {
             table.emitEvent("row:action", { row, rowId, actionId: id });
             table.refresh();
           });

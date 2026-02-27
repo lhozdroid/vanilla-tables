@@ -78,4 +78,30 @@ describe('StateStore', () => {
         const ordered = store.getOrderedColumns(columns);
         expect(ordered.map((column) => column.key)).toEqual(['score', 'name', 'city']);
     });
+
+    it('normalizes invalid page size values to safe integers', () => {
+        const store = new StateStore({ rows, pageSize: 0, initialSort: null });
+        expect(store.getState().pageSize).toBe(1);
+
+        store.setPageSize(-5);
+        expect(store.getState().pageSize).toBe(1);
+
+        store.setState({ pageSize: 2.8 });
+        expect(store.getState().pageSize).toBe(2);
+    });
+
+    it('normalizes restored search and column filters', () => {
+        const store = new StateStore({ rows, pageSize: 10, initialSort: null });
+        store.setState({
+            searchTerm: '  PAR  ',
+            columnFilters: {
+                city: '  PARIS ',
+                name: '   '
+            }
+        });
+
+        const state = store.getState();
+        expect(state.searchTerm).toBe('par');
+        expect(state.columnFilters).toEqual({ city: 'paris' });
+    });
 });

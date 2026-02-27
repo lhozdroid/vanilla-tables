@@ -27,4 +27,20 @@ test.describe('layout and virtual scroll', () => {
             .then(() => page.waitForTimeout(80))
             .then(() => expect(page.locator('.vt-virtual-top')).toHaveCount(1));
     });
+
+    test('renders column virtual spacers and updates on horizontal scroll', ({ page }) => {
+        return openScenario(page, 'virtual-columns')
+            .then(() => expect(page.locator('thead tr').first().locator('.vt-col-spacer')).toHaveCount(1))
+            .then(() => expect(page.locator('tbody tr.vt-row').first().locator('.vt-col-spacer')).toHaveCount(1))
+            .then(() =>
+                page.evaluate(() => {
+                    const wrap = document.querySelector('.vt-table-wrap');
+                    wrap.scrollLeft = 600;
+                    wrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+                })
+            )
+            .then(() => page.waitForTimeout(80))
+            .then(() => expect(page.locator('thead tr').first().locator('.vt-col-spacer')).toHaveCount(1))
+            .then(() => expect(page.locator('tbody tr.vt-row').first().locator('.vt-col-spacer')).toHaveCount(1));
+    });
 });

@@ -253,13 +253,34 @@ Built-in theme plugins:
 
 ```js
 const table = createVanillaTable(root, rows, {
+    virtualScroll: {
+        enabled: true,
+        adaptiveOverscan: true
+    },
+    virtualColumns: {
+        enabled: true,
+        width: 180,
+        overscan: 2
+    },
     parallel: {
         enabled: true,
         threshold: 20000,
         workers: 'auto',
         timeoutMs: 4000,
-        retries: 1
+        retries: 1,
+        typedColumns: true
     }
+});
+```
+
+## HTML Safety
+
+- `column.render` and `expandRow` may return HTML strings.
+- Use `sanitizeHtml` to sanitize those strings before insertion.
+
+```js
+const table = createVanillaTable(root, rows, {
+    sanitizeHtml: (html) => DOMPurify.sanitize(html)
 });
 ```
 

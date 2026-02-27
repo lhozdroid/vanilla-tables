@@ -226,6 +226,34 @@ function getWorkerUrl() {
 
     let rows = [];
     let offset = 0;
+    let textColumns = new Map();
+    let numericColumns = new Map();
+
+    const getTextColumn = (key) => {
+      if (textColumns.has(key)) return textColumns.get(key);
+      const values = new Array(rows.length);
+      for (let i = 0; i < rows.length; i += 1) {
+        values[i] = toText(rows[i] && rows[i][key]);
+      }
+      textColumns.set(key, values);
+      return values;
+    };
+
+    const getNumericColumn = (key) => {
+      if (numericColumns.has(key)) return numericColumns.get(key);
+      const values = new Float64Array(rows.length);
+      const flags = new Uint8Array(rows.length);
+      for (let i = 0; i < rows.length; i += 1) {
+        const parsed = Number(rows[i] && rows[i][key]);
+        if (Number.isFinite(parsed)) {
+          values[i] = parsed;
+          flags[i] = 1;
+        }
+      }
+      const output = { values, flags };
+      numericColumns.set(key, output);
+      return output;
+    };
 
     self.onmessage = (event) => {
       const data = event.data || {};
@@ -234,6 +262,8 @@ function getWorkerUrl() {
         if (data.type === 'setRows') {
           rows = Array.isArray(data.rows) ? data.rows : [];
           offset = Number(data.offset || 0);
+          textColumns = new Map();
+          numericColumns = new Map();
           self.postMessage({ id: data.id, result: true });
           return;
         }
@@ -247,13 +277,26 @@ function getWorkerUrl() {
             : {};
           const filterEntries = Object.entries(filters);
           const output = [];
+          const textByKey = new Map();
+          const numericByKey = new Map();
+          const getText = (key) => {
+            if (textByKey.has(key)) return textByKey.get(key);
+            const values = getTextColumn(key);
+            textByKey.set(key, values);
+            return values;
+          };
+          const getNumeric = (key) => {
+            if (numericByKey.has(key)) return numericByKey.get(key);
+            const values = getNumericColumn(key);
+            numericByKey.set(key, values);
+            return values;
+          };
 
           for (let i = 0; i < rows.length; i += 1) {
-            const row = rows[i];
             let matchesFilters = true;
 
             for (const [key, term] of filterEntries) {
-              if (!toText(row && row[key]).includes(toText(term))) {
+              if (!getText(key)[i].includes(toText(term))) {
                 matchesFilters = false;
                 break;
               }
@@ -267,7 +310,7 @@ function getWorkerUrl() {
 
             let matchesSearch = false;
             for (const key of keys) {
-              if (toText(row && row[key]).includes(searchTerm)) {
+              if (getText(key)[i].includes(searchTerm)) {
                 matchesSearch = true;
                 break;
               }
@@ -277,22 +320,18 @@ function getWorkerUrl() {
 
           if (sorts.length > 0) {
             output.sort((leftIndex, rightIndex) => {
-              const leftRow = rows[leftIndex - offset];
-              const rightRow = rows[rightIndex - offset];
+              const leftRowIndex = leftIndex - offset;
+              const rightRowIndex = rightIndex - offset;
               for (const sort of sorts) {
-                const leftRaw = leftRow ? leftRow[sort.key] : null;
-                const rightRaw = rightRow ? rightRow[sort.key] : null;
-                const leftNum = Number(leftRaw);
-                const rightNum = Number(rightRaw);
-                const leftFinite = Number.isFinite(leftNum);
-                const rightFinite = Number.isFinite(rightNum);
-
+                const numeric = getNumeric(sort.key);
+                const text = getText(sort.key);
                 let cmp = 0;
-                if (leftFinite && rightFinite) {
-                  cmp = leftNum - rightNum;
+                const bothNumeric = numeric.flags[leftRowIndex] && numeric.flags[rightRowIndex];
+                if (bothNumeric) {
+                  cmp = numeric.values[leftRowIndex] - numeric.values[rightRowIndex];
                 } else {
-                  const leftText = toText(leftRaw);
-                  const rightText = toText(rightRaw);
+                  const leftText = text[leftRowIndex];
+                  const rightText = text[rightRowIndex];
                   if (leftText < rightText) cmp = -1;
                   else if (leftText > rightText) cmp = 1;
                 }

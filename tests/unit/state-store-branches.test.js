@@ -154,4 +154,25 @@ describe('StateStore branch coverage', () => {
             expect(store.projectionWorkerPool).toBeNull();
         });
     });
+
+    it('supports incremental narrowing without stale broadening results', () => {
+        const rows = Array.from({ length: 200 }).map((_, index) => ({
+            id: index + 1,
+            name: index % 2 === 0 ? `Alpha ${index}` : `Beta ${index}`,
+            city: index % 3 === 0 ? 'Paris' : 'Rome'
+        }));
+        const store = new StateStore({ rows, pageSize: 200, initialSort: null });
+        const queryColumns = [{ key: 'name' }, { key: 'city' }];
+
+        store.setSearchTerm('alpha');
+        const broad = store.getVisibleRows(queryColumns).rows.length;
+        store.setSearchTerm('alpha 1');
+        const narrow = store.getVisibleRows(queryColumns).rows.length;
+        store.setSearchTerm('beta 19');
+        const switched = store.getVisibleRows(queryColumns).rows.length;
+
+        expect(narrow).toBeLessThanOrEqual(broad);
+        expect(switched).toBeGreaterThan(0);
+        expect(switched).not.toBe(narrow);
+    });
 });

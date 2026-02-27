@@ -102,6 +102,21 @@ export class VanillaTable {
             end: this.options.pageSize,
             rowHeight: this.options.virtualScroll.rowHeight
         };
+        /** @type {{ enabled: boolean, start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number }} */
+        this.columnVirtualization = {
+            enabled: Boolean(this.options.virtualColumns?.enabled),
+            start: 0,
+            end: this.options.columns.length,
+            leftWidth: 0,
+            rightWidth: 0,
+            totalColumns: this.options.columns.length
+        };
+        /** @type {{ lastTop: number, lastAt: number, dynamicOverscan: number }} */
+        this.scrollProfile = {
+            lastTop: 0,
+            lastAt: 0,
+            dynamicOverscan: this.options.virtualScroll.overscan
+        };
 
         this.applySyncedState();
     }
@@ -144,7 +159,8 @@ export class VanillaTable {
                 this.lastView = view;
                 this.virtualization = this.computeVirtualWindow(view.rows.length);
 
-                this.renderer.renderHeader(columns, this.store.state.sorts, this.store.state.columnFilters, this.store.state.columnWidths);
+                this.columnVirtualization = this.computeColumnWindow(columns);
+                this.renderer.renderHeader(columns, this.store.state.sorts, this.store.state.columnFilters, this.store.state.columnWidths, this.columnVirtualization);
                 this.renderer.renderBody(columns, view.rows, {
                     expandedRowIds: this.expandedRowIds,
                     getRowId: (row, index) => this.getRowId(row, index),
@@ -152,7 +168,8 @@ export class VanillaTable {
                     editableRows: this.options.editableRows,
                     editableColumns: this.options.editableColumns,
                     columnWidths: this.store.state.columnWidths,
-                    virtualization: this.virtualization
+                    virtualization: this.virtualization,
+                    columnWindow: this.columnVirtualization
                 });
                 this.renderer.renderFooter({
                     page: this.store.state.page,
@@ -219,7 +236,7 @@ export class VanillaTable {
             const applySearch = () => {
                 this.store.setSearchTerm(event.target.value);
                 this.emitEvent('search:change', { term: this.store.state.searchTerm });
-                void this.refresh();
+                this.scheduleRefresh(false);
             };
 
             if (this.options.debounceMs <= 0) {
@@ -260,7 +277,7 @@ export class VanillaTable {
                 key: input.dataset.key,
                 value: this.store.state.columnFilters[input.dataset.key] || ''
             });
-            void this.refresh();
+            this.scheduleRefresh(false);
         });
     }
 
@@ -469,15 +486,42 @@ export class VanillaTable {
      * @returns {void}
      */
     bindVirtualScrollEvents() {
-        if (!this.options.virtualScroll.enabled) return;
+        if (!this.options.virtualScroll.enabled && !this.options.virtualColumns?.enabled) return;
 
         this.renderer.refs.tableWrap?.addEventListener('scroll', () => {
+            const wrap = this.renderer.refs.tableWrap;
+            if (this.options.virtualScroll.adaptiveOverscan && wrap) {
+                const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                const deltaTop = Math.abs(wrap.scrollTop - this.scrollProfile.lastTop);
+                const deltaTime = Math.max(1, now - this.scrollProfile.lastAt);
+                const velocity = deltaTop / deltaTime;
+                const boost = Math.min(20, Math.floor(velocity * 16));
+                this.scrollProfile.dynamicOverscan = Math.max(this.options.virtualScroll.overscan, this.options.virtualScroll.overscan + boost);
+                this.scrollProfile.lastTop = wrap.scrollTop;
+                this.scrollProfile.lastAt = now;
+            }
             if (this.lastAnimationFrame) {
                 cancelAnimationFrame(this.lastAnimationFrame);
             }
             this.lastAnimationFrame = requestAnimationFrame(() => {
-                void this.refresh();
+                this.scheduleRefresh(true);
             });
+        });
+    }
+
+    /**
+     * Schedules one refresh using animation or idle callbacks.
+     *
+     * @param {boolean} urgent
+     * @returns {void}
+     */
+    scheduleRefresh(urgent) {
+        if (urgent || typeof requestIdleCallback !== 'function') {
+            void this.refresh();
+            return;
+        }
+        requestIdleCallback(() => {
+            void this.refresh();
         });
     }
 
@@ -979,7 +1023,7 @@ export class VanillaTable {
 
         const wrap = this.renderer.refs.tableWrap;
         const rowHeight = this.options.virtualScroll.rowHeight;
-        const overscan = this.options.virtualScroll.overscan;
+        const overscan = this.options.virtualScroll.adaptiveOverscan ? this.scrollProfile.dynamicOverscan : this.options.virtualScroll.overscan;
         const visibleCount = Math.ceil((wrap.clientHeight || this.options.virtualScroll.height) / rowHeight);
         const start = Math.max(0, Math.floor(wrap.scrollTop / rowHeight) - overscan);
         const end = Math.min(totalRows, start + visibleCount + overscan * 2);
@@ -989,6 +1033,58 @@ export class VanillaTable {
             start,
             end,
             rowHeight
+        };
+    }
+
+    /**
+     * Computes virtual column window.
+     *
+     * @param {{ key: string }[]} columns
+     * @returns {{ enabled: boolean, start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number }}
+     */
+    computeColumnWindow(columns) {
+        if (!this.options.virtualColumns?.enabled || !this.renderer.refs.tableWrap) {
+            return {
+                enabled: false,
+                start: 0,
+                end: columns.length,
+                leftWidth: 0,
+                rightWidth: 0,
+                totalColumns: columns.length
+            };
+        }
+
+        const wrap = this.renderer.refs.tableWrap;
+        const defaultWidth = Math.max(40, Number(this.options.virtualColumns.width || 180));
+        const overscan = Math.max(0, Number(this.options.virtualColumns.overscan || 0));
+        const widths = columns.map((column) => this.store.state.columnWidths[column.key] || defaultWidth);
+        const targetStart = wrap.scrollLeft;
+        const targetEnd = wrap.scrollLeft + wrap.clientWidth;
+        let acc = 0;
+        let firstVisible = 0;
+        while (firstVisible < widths.length && acc + widths[firstVisible] < targetStart) {
+            acc += widths[firstVisible];
+            firstVisible += 1;
+        }
+        let accEnd = acc;
+        let lastVisible = firstVisible;
+        while (lastVisible < widths.length && accEnd < targetEnd) {
+            accEnd += widths[lastVisible];
+            lastVisible += 1;
+        }
+
+        const start = Math.max(0, firstVisible - overscan);
+        const end = Math.min(widths.length, lastVisible + overscan);
+        const leftWidth = widths.slice(0, start).reduce((sum, value) => sum + value, 0);
+        const rightWidth = widths.slice(end).reduce((sum, value) => sum + value, 0);
+
+        return {
+            enabled: true,
+            start,
+            end,
+            leftWidth,
+            rightWidth,
+            totalColumns: columns.length
         };
     }
 

@@ -22,15 +22,16 @@ export class ShellRenderer {
      * @returns {Record<string, HTMLElement>}
      */
     mount() {
+        const labels = this.options.labels || {};
         this.root.innerHTML = `
       <div class="${this.theme.classOf('shell', 'vt-shell')}">
         <div class="${this.theme.classOf('controls', 'vt-controls')}">
           <label class="${this.theme.classOf('sizeWrap', 'vt-size-wrap')}">
-            <span>${this.options.labels.rows}</span>
+            <span>${escapeHtml(String(labels.rows ?? ''))}</span>
             <select class="${this.theme.classOf('sizeSelect', 'vt-size')}"></select>
           </label>
           <label class="${this.theme.classOf('searchWrap', 'vt-search-wrap')}">
-            <span>${this.options.labels.search}</span>
+            <span>${escapeHtml(String(labels.search ?? ''))}</span>
             <input class="${this.theme.classOf('searchInput', 'vt-search')}" type="search" placeholder="Type to filter..." />
           </label>
         </div>
@@ -43,10 +44,10 @@ export class ShellRenderer {
         <div class="${this.theme.classOf('footer', 'vt-footer')} ${this.options.fixedFooter ? this.theme.classOf('fixedFooter', 'vt-fixed-footer') : ''}">
           <span class="${this.theme.classOf('info', 'vt-info')}"></span>
           <div class="${this.theme.classOf('paginationGroup', 'vt-pagination-group')}">
-            <button class="${this.theme.classOf('firstButton', 'vt-page-btn vt-first')}" type="button">${this.options.labels.first}</button>
-            <button class="${this.theme.classOf('prevButton', 'vt-page-btn vt-prev')}" type="button">${this.options.labels.prev}</button>
-            <button class="${this.theme.classOf('nextButton', 'vt-page-btn vt-next')}" type="button">${this.options.labels.next}</button>
-            <button class="${this.theme.classOf('lastButton', 'vt-page-btn vt-last')}" type="button">${this.options.labels.last}</button>
+            <button class="${this.theme.classOf('firstButton', 'vt-page-btn vt-first')}" type="button">${escapeHtml(String(labels.first ?? ''))}</button>
+            <button class="${this.theme.classOf('prevButton', 'vt-page-btn vt-prev')}" type="button">${escapeHtml(String(labels.prev ?? ''))}</button>
+            <button class="${this.theme.classOf('nextButton', 'vt-page-btn vt-next')}" type="button">${escapeHtml(String(labels.next ?? ''))}</button>
+            <button class="${this.theme.classOf('lastButton', 'vt-page-btn vt-last')}" type="button">${escapeHtml(String(labels.last ?? ''))}</button>
           </div>
         </div>
       </div>
@@ -66,8 +67,9 @@ export class ShellRenderer {
             last: this.root.querySelector('.vt-last')
         };
 
-        refs.pageSize.innerHTML = this.options.pageSizeOptions.map((size) => `<option value="${size}">${size}</option>`).join('');
-        refs.pageSize.value = String(this.options.pageSize);
+        const pageSizes = normalizePageSizeOptions(this.options.pageSizeOptions);
+        refs.pageSize.innerHTML = pageSizes.map((size) => `<option value="${size}">${size}</option>`).join('');
+        refs.pageSize.value = String(normalizePageSize(this.options.pageSize));
 
         if (!this.options.searchable) {
             refs.search.closest('.vt-search-wrap').style.display = 'none';
@@ -79,4 +81,38 @@ export class ShellRenderer {
 
         return refs;
     }
+}
+
+/**
+ * Escapes HTML-sensitive characters.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function escapeHtml(value) {
+    return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+
+/**
+ * Normalizes one page size value.
+ *
+ * @param {unknown} value
+ * @returns {number}
+ */
+function normalizePageSize(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(1, Math.floor(parsed));
+}
+
+/**
+ * Normalizes page size option list.
+ *
+ * @param {unknown[]} values
+ * @returns {number[]}
+ */
+function normalizePageSizeOptions(values) {
+    if (!Array.isArray(values) || !values.length) return [10, 25, 50, 100];
+    const normalized = values.map((value) => normalizePageSize(value));
+    return [...new Set(normalized)];
 }

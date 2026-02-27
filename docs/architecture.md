@@ -26,7 +26,17 @@
 
 - Worker pool: `src/core/parallel/projection-worker-pool.js`
 - Enabled through `options.parallel`
+- Worker shards maintain typed column caches for repeated filter/sort queries
 - Falls back to sync path if workers are unavailable or fail
+
+## Performance Pipeline
+
+- Incremental narrowing: filter/search refinements can reuse previous filtered sets.
+- Compiled sort comparators: per-query sort plans are cached and reused across refreshes.
+- Row virtualization: controlled by `options.virtualScroll`.
+- Column virtualization: controlled by `options.virtualColumns`, rendered with spacer cells.
+- Adaptive overscan: row overscan increases with scroll velocity when enabled.
+- DOM patch path: body renderer reuses keyed row nodes to reduce churn.
 
 ## Extension Points
 

@@ -60,7 +60,8 @@ describe('Renderer and shell branches', () => {
             editableRows: false,
             editableColumns: {},
             columnWidths: {},
-            virtualization: { enabled: false, start: 0, end: 0, rowHeight: 30 }
+            virtualization: { enabled: false, start: 0, end: 0, rowHeight: 30 },
+            columnWindow: { enabled: false, start: 0, end: 1, leftWidth: 0, rightWidth: 0, totalColumns: 1 }
         });
 
         expect(root.querySelector('.vt-empty')).not.toBeNull();
@@ -72,7 +73,8 @@ describe('Renderer and shell branches', () => {
             editableRows: true,
             editableColumns: { name: false },
             columnWidths: { name: 210 },
-            virtualization: { enabled: true, start: 1, end: 3, rowHeight: 30 }
+            virtualization: { enabled: true, start: 1, end: 3, rowHeight: 30 },
+            columnWindow: { enabled: false, start: 0, end: 1, leftWidth: 0, rightWidth: 0, totalColumns: 1 }
         });
 
         // Verifies spacer rows used by virtualization windows.
@@ -86,9 +88,11 @@ describe('Renderer and shell branches', () => {
             editableRows: false,
             editableColumns: {},
             columnWidths: {},
-            virtualization: { enabled: true, start: 0, end: 2, rowHeight: 30 }
+            virtualization: { enabled: true, start: 0, end: 2, rowHeight: 30 },
+            columnWindow: { enabled: true, start: 0, end: 1, leftWidth: 100, rightWidth: 120, totalColumns: 3 }
         });
 
         expect(root.querySelector('.vt-fixed-top-row')).not.toBeNull();
+        expect(root.querySelectorAll('.vt-col-spacer').length).toBeGreaterThan(0);
     });
 });

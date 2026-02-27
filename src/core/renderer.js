@@ -66,10 +66,19 @@ export class Renderer {
      * @param {{ key: string, direction: 'asc'|'desc' }[]} sortState
      * @param {Record<string, string>} columnFilters
      * @param {Record<string, number>} columnWidths
+     * @param {{ start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean }} columnWindow
      * @returns {void}
      */
-    renderHeader(columns, sortState, columnFilters, columnWidths) {
-        this.headerRenderer.render(this.refs.thead, columns, sortState, columnFilters, (cell, visualIndex) => this.applyFixedColumn(cell, visualIndex, columns, columnWidths), columnWidths);
+    renderHeader(columns, sortState, columnFilters, columnWidths, columnWindow) {
+        this.headerRenderer.render(
+            this.refs.thead,
+            columns,
+            sortState,
+            columnFilters,
+            (cell, visualIndex) => this.applyFixedColumn(cell, visualIndex, columns, columnWidths),
+            columnWidths,
+            columnWindow
+        );
     }
 
     /**
@@ -77,7 +86,7 @@ export class Renderer {
      *
      * @param {{ key: string, render?: (value: any, row: Record<string, any>) => string, editable?: boolean }[]} columns
      * @param {Record<string, any>[]} rows
-     * @param {{ expandedRowIds: Set<string>, getRowId: (row: Record<string, any>, index: number) => string, expandRow: ((row: Record<string, any>) => string) | null, editableRows: boolean, editableColumns: Record<string, boolean>, columnWidths: Record<string, number>, virtualization: { enabled: boolean, start: number, end: number, rowHeight: number } }} meta
+     * @param {{ expandedRowIds: Set<string>, getRowId: (row: Record<string, any>, index: number) => string, expandRow: ((row: Record<string, any>) => string) | null, editableRows: boolean, editableColumns: Record<string, boolean>, columnWidths: Record<string, number>, virtualization: { enabled: boolean, start: number, end: number, rowHeight: number }, columnWindow: { start: number, end: number, leftWidth: number, rightWidth: number, totalColumns: number, enabled: boolean } }} meta
      * @returns {void}
      */
     renderBody(columns, rows, meta) {
